@@ -543,11 +543,11 @@ altddio_out #(
 //  Reset
 // ========================================================================
 
-reg [19:0] reset_counter = 20'd500000; // ~9ms at 57MHz, enough for SDRAM init
-wire       atari_reset = |reset_counter;
+reg [19:0] reset_counter = 20'd500000;
+wire       atari_reset = |reset_counter | ioctl_download;
 
 always @(posedge clk_sys) begin
-    if (status[0])
+    if (status[0] | ioctl_download)
         reset_counter <= 20'd500000;
     else if (reset_counter)
         reset_counter <= reset_counter - 1'd1;
@@ -626,7 +626,7 @@ wire        cart_dl_wr;
 wire [27:0] cart_dl_addr;
 wire  [7:0] cart_dl_data;
 
-data_loader #(.ADDRESS_MASK_UPPER_4(4'h1), .ADDRESS_SIZE(28)) cart_dl (
+data_loader #(.ADDRESS_MASK_UPPER_4(4'h3), .ADDRESS_SIZE(28)) cart_dl (
     .clk_74a(clk_74a), .clk_memory(clk_sys),
     .bridge_wr(bridge_wr), .bridge_endian_little(bridge_endian_little),
     .bridge_addr(bridge_addr), .bridge_wr_data(bridge_wr_data),
