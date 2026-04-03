@@ -429,6 +429,7 @@ localparam V_TOTAL  = 10'd512;
 reg [9:0] h_cnt = 0;
 reg [9:0] v_cnt = 0;
 reg       vid_vs = 0, vid_hs = 0, vid_de = 0;
+reg       vs_prev = 0;
 
 always @(posedge clk_vid) begin
     vid_de <= 0;
@@ -439,11 +440,15 @@ always @(posedge clk_vid) begin
     if (h_cnt == H_TOTAL - 1) begin
         h_cnt <= 0;
         v_cnt <= v_cnt + 1'd1;
-        if (v_cnt == V_TOTAL - 1)
-            v_cnt <= 0;
     end
 
-    if (h_cnt == 0 && v_cnt == 0) vid_vs <= 1;
+    // Lock vertical to ANTIC vsync — prevents vertical drift
+    if (vs_lat & ~vs_prev) begin
+        v_cnt <= 0;
+        vid_vs <= 1;
+    end
+    vs_prev <= vs_lat;
+
     if (h_cnt == 3) vid_hs <= 1;
 
     if (h_cnt >= H_BPORCH && h_cnt < H_ACTIVE + H_BPORCH &&
