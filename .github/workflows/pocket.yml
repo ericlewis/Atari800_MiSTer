@@ -1,0 +1,60 @@
+name: Build Atari 5200 Pocket Core
+
+on:
+  push:
+    branches: [master, pocket]
+    paths:
+      - 'pocket/**'
+      - 'rtl/**'
+      - 'pkg/**'
+      - '.github/workflows/pocket.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'pocket/**'
+      - 'rtl/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare build directory
+        run: |
+          ln -sf ../rtl pocket/rtl
+
+      - name: Compile with Quartus
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/build" \
+            -w /build/pocket \
+            raetro/quartus:pocket \
+            quartus_sh --flow compile Atari5200_Pocket
+
+      - name: Reverse bitstream
+        run: |
+          sudo chown -R runner:runner pocket/output_files/
+          python3 pocket/reverse_bitstream.py \
+            pocket/output_files/Atari5200_Pocket.rbf \
+            pocket/output_files/bitstream.rbf_r
+
+      - name: Package release artifact
+        run: |
+          mkdir -p release/Cores/ericlewis.Atari5200
+          mkdir -p release/Platforms
+          mkdir -p release/Assets/a5200/common
+
+          cp pocket/output_files/bitstream.rbf_r release/Cores/ericlewis.Atari5200/
+          cp pkg/Cores/ericlewis.Atari5200/*.json release/Cores/ericlewis.Atari5200/
+          cp pkg/Platforms/a5200.json release/Platforms/
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ericlewis.Atari5200-pocket
+          path: release/
+          retention-days: 30

@@ -1,0 +1,22 @@
+{
+  "data": {
+    "magic": "APF_VER_1",
+    "data_slots": [
+      {
+        "id": 0,
+        "name": "5200 BIOS",
+        "required": true,
+        "parameters": "0x00000000",
+        "extensions": ["rom", "bin"],
+        "filename": "5200.rom"
+      },
+      {
+        "id": 1,
+        "name": "Cartridge",
+        "required": false,
+        "parameters": "0x10000000",
+        "extensions": ["car", "a52", "bin", "rom"]
+      }
+    ]
+  }
+}
