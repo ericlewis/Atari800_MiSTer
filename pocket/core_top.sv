@@ -337,20 +337,18 @@ bridge_interact #(.NUM_REGS(16)) interact_bridge (
 //  Clocks: 74.25 MHz → 57.27 / 114.55 / 57.27 MHz
 // ========================================================================
 
-wire clk_sys;
-wire clk_mem;
-wire clk_vdo;
-wire clk_vid;
-wire clk_vid_90;
+wire clk_sys;     // 57.27 MHz (system + video base)
+wire clk_mem;     // 114.55 MHz (SDRAM)
+wire clk_vid;     // 3.58 MHz (Atari color clock = pixel clock for scaler)
+wire clk_vid_90;  // 3.58 MHz 90° (DDR)
 
 pll pll_inst (
     .refclk   (clk_74a),
     .rst      (1'b0),
     .outclk_0 (clk_sys),
     .outclk_1 (clk_mem),
-    .outclk_2 (clk_vdo),
-    .outclk_3 (clk_vid),
-    .outclk_4 (clk_vid_90),
+    .outclk_2 (clk_vid),
+    .outclk_3 (clk_vid_90),
     .locked   (pll_core_locked)
 );
 
@@ -362,23 +360,43 @@ wire [7:0] Ro, Go, Bo;
 wire       HBlank_o, VBlank_o, HSync_o, VSync_o;
 wire       ce_pix_raw;
 
-// Video output at dedicated ~7MHz pixel clock (no skip)
+// Video: use dedicated ~3.58 MHz color clock as pixel clock (no skip)
+// Register video from clk_sys domain into clk_vid domain
 assign video_rgb_clock    = clk_vid;
 assign video_rgb_clock_90 = clk_vid_90;
 assign video_skip = 1'b0;
 
-// Register video signals from clk_vdo to clk_vid domain
-reg [7:0]  vid_r, vid_g, vid_b;
-reg        vid_hs, vid_vs, vid_hb, vid_vb;
+// ce_pix edge detect (from ANTIC, in clk_sys domain)
+reg ce_pix_raw_old = 0;
+wire ce_pix = ce_pix_raw & ~ce_pix_raw_old;
+always @(posedge clk_sys) ce_pix_raw_old <= ce_pix_raw;
 
+// Latch video on pixel enable in clk_sys domain
+reg [7:0] r_lat, g_lat, b_lat;
+reg       hs_lat, vs_lat, hb_lat, vb_lat;
+always @(posedge clk_sys) begin
+    if (ce_pix) begin
+        r_lat  <= Ro;
+        g_lat  <= Go;
+        b_lat  <= Bo;
+        hb_lat <= HBlank_o;
+        vb_lat <= VBlank_o;
+        hs_lat <= HSync_o;
+        if (~hs_lat & HSync_o) vs_lat <= VSync_o;
+    end
+end
+
+// Sample latched values into clk_vid domain
+reg [7:0] vid_r, vid_g, vid_b;
+reg       vid_hs, vid_vs, vid_hb, vid_vb;
 always @(posedge clk_vid) begin
-    vid_r  <= Ro;
-    vid_g  <= Go;
-    vid_b  <= Bo;
-    vid_hb <= HBlank_o;
-    vid_vb <= VBlank_o;
-    vid_hs <= HSync_o;
-    vid_vs <= VSync_o;
+    vid_r  <= r_lat;
+    vid_g  <= g_lat;
+    vid_b  <= b_lat;
+    vid_hb <= hb_lat;
+    vid_vb <= vb_lat;
+    vid_hs <= hs_lat;
+    vid_vs <= vs_lat;
 end
 
 assign video_rgb = (~vid_hb & ~vid_vb) ? {vid_r, vid_g, vid_b} : 24'd0;
