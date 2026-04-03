@@ -613,56 +613,49 @@ dpram #(11, 8, "rtl/rom/5200.mif") bios_5200 (
 );
 
 // ========================================================================
-//  Cartridge loading via data slots
+//  Cartridge loading via data_loader (agg23 utility)
+//  Slot 1 (cart) at 0x1xxxxxxx → DMA to SDRAM
 // ========================================================================
 
+always @(posedge clk_74a) begin
+    target_dataslot_read <= 0; target_dataslot_write <= 0;
+    target_dataslot_getfile <= 0; target_dataslot_openfile <= 0;
+end
+
+wire        cart_dl_wr;
+wire [27:0] cart_dl_addr;
+wire  [7:0] cart_dl_data;
+
+data_loader #(.ADDRESS_MASK_UPPER_4(4'h1), .ADDRESS_SIZE(28)) cart_dl (
+    .clk_74a(clk_74a), .clk_memory(clk_sys),
+    .bridge_wr(bridge_wr), .bridge_endian_little(bridge_endian_little),
+    .bridge_addr(bridge_addr), .bridge_wr_data(bridge_wr_data),
+    .write_en(cart_dl_wr), .write_addr(cart_dl_addr), .write_data(cart_dl_data)
+);
+
+// Map to ioctl signals for the DMA state machine
 reg        ioctl_download = 0;
-reg        ioctl_wr = 0;
+reg        ioctl_wr;
 reg [26:0] ioctl_addr;
 reg  [7:0] ioctl_dout;
 reg  [7:0] ioctl_index;
 
-// Bridge write capture (clk_74a domain)
-reg [26:0] dl_addr_74 = 0;
-reg  [7:0] dl_data_74;
-reg        dl_wr_74;
-reg        dl_active_74 = 0;
-reg  [7:0] dl_index_74;
+reg dl_downloading = 0;
+reg dl_s0, dl_s1;
 
 always @(posedge clk_74a) begin
-    dl_wr_74 <= 0;
-    if (dataslot_requestread) begin
-        dl_active_74 <= 1;
-        dl_addr_74   <= 0;
-        case (dataslot_requestread_id)
-            16'd0:   dl_index_74 <= 8'd0;    // BIOS
-            16'd1:   dl_index_74 <= 8'd1;    // Cartridge
-            default: dl_index_74 <= dataslot_requestread_id[7:0];
-        endcase
-    end
-    if (bridge_wr && bridge_addr[31:24] == 8'h20 && dl_active_74) begin
-        dl_data_74 <= bridge_wr_data[7:0];
-        dl_wr_74   <= 1;
-        dl_addr_74 <= dl_addr_74 + 1'd1;
-    end
-    if (dataslot_allcomplete) dl_active_74 <= 0;
+    if (dataslot_requestwrite) dl_downloading <= 1;
+    if (dataslot_allcomplete)  dl_downloading <= 0;
 end
 
-// Cross to clk_sys domain
-reg [2:0] dl_wr_sync;
-reg       dl_active_s0, dl_active_s1;
 always @(posedge clk_sys) begin
-    dl_wr_sync <= {dl_wr_sync[1:0], dl_wr_74};
-    dl_active_s0 <= dl_active_74;
-    dl_active_s1 <= dl_active_s0;
-    ioctl_wr <= 0;
-    if (dl_wr_sync[1] & ~dl_wr_sync[2]) begin
-        ioctl_wr   <= 1;
-        ioctl_dout <= dl_data_74;
-        ioctl_addr <= dl_addr_74 - 1'd1;
-    end
-    ioctl_download <= dl_active_s1;
-    ioctl_index    <= dl_index_74;
+    dl_s0 <= dl_downloading;
+    dl_s1 <= dl_s0;
+    ioctl_download <= dl_s1;
+    ioctl_wr   <= cart_dl_wr;
+    ioctl_addr <= cart_dl_addr[26:0];
+    ioctl_dout <= cart_dl_data;
+    ioctl_index <= 8'd1; // cartridge
 end
 
 // DMA to SDRAM for cartridge loading

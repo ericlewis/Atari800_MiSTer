@@ -755,6 +755,9 @@ set_global_assignment -name QIP_FILE mf_pllbase.qip
 
 # Bridge library
 set_global_assignment -name SYSTEMVERILOG_FILE mister_pocket_bridge/bridge_interact.sv
+set_global_assignment -name SYSTEMVERILOG_FILE data_loader.sv
+set_global_assignment -name SYSTEMVERILOG_FILE sound_i2s.sv
+set_global_assignment -name SYSTEMVERILOG_FILE sync_fifo.sv
 
 # dpram is already in bram.vhd
 
