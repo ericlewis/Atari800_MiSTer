@@ -396,27 +396,59 @@ always @(posedge clk_sys) begin
     end
 end
 
-// Sync the latched signals into clk_vid domain
-reg [7:0] vid_r, vid_g, vid_b;
-reg       vid_hs, vid_vs, vid_hb, vid_vb;
-reg       vid_hs_prev, vid_vs_prev;
+// Generated timing at 12.288 MHz (proven sync) with ANTIC pixel data.
+// Sync h_cnt to ANTIC hsync edges so picture aligns.
+localparam H_BPORCH = 10'd10;
+localparam H_ACTIVE = 10'd320;
+localparam H_TOTAL  = 10'd400;
+localparam V_BPORCH = 10'd10;
+localparam V_ACTIVE = 10'd240;
+localparam V_TOTAL  = 10'd512;
+
+reg [9:0] h_cnt = 0;
+reg [9:0] v_cnt = 0;
+reg       vid_vs, vid_hs, vid_de;
+reg       hs_lat_prev = 0, vs_lat_prev = 0;
 
 always @(posedge clk_vid) begin
-    vid_r  <= r_lat;
-    vid_g  <= g_lat;
-    vid_b  <= b_lat;
-    vid_hb <= hb_lat;
-    vid_vb <= vb_lat;
+    vid_de <= 0;
+    vid_vs <= 0;
+    vid_hs <= 0;
 
-    vid_hs_prev <= hs_lat;
-    vid_vs_prev <= vs_lat;
+    h_cnt <= h_cnt + 1'd1;
+    if (h_cnt == H_TOTAL - 1) begin
+        h_cnt <= 0;
+        v_cnt <= v_cnt + 1'd1;
+        if (v_cnt == V_TOTAL - 1)
+            v_cnt <= 0;
+    end
 
-    // Generate clean single-cycle pulses on sync edges
-    vid_hs <= hs_lat & ~vid_hs_prev;  // rising edge of hsync
-    vid_vs <= vs_lat & ~vid_vs_prev;  // rising edge of vsync
+    // Sync to ANTIC: reset h_cnt on hsync rising edge
+    hs_lat_prev <= hs_lat;
+    if (hs_lat & ~hs_lat_prev) begin
+        h_cnt <= 0;
+        vid_hs <= 1;
+        v_cnt <= v_cnt + 1'd1;
+
+        // Sync to ANTIC: reset v_cnt on vsync rising edge
+        vs_lat_prev <= vs_lat;
+        if (vs_lat & ~vs_lat_prev) begin
+            v_cnt <= 0;
+            vid_vs <= 1;
+        end
+    end
+
+    if (h_cnt >= H_BPORCH && h_cnt < H_ACTIVE + H_BPORCH &&
+        v_cnt >= V_BPORCH && v_cnt < V_ACTIVE + V_BPORCH)
+        vid_de <= 1;
 end
 
-wire vid_de = ~vid_hb & ~vid_vb;
+reg [7:0] vid_r, vid_g, vid_b;
+always @(posedge clk_vid) begin
+    vid_r <= r_lat;
+    vid_g <= g_lat;
+    vid_b <= b_lat;
+end
 
 assign video_rgb = vid_de ? {vid_r, vid_g, vid_b} : 24'd0;
 assign video_de  = vid_de;
