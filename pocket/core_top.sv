@@ -454,7 +454,7 @@ always @(posedge clk_vid) begin
         vid_de <= 1;
 
     // Read address: {line[7:0], pixel[8:0]}
-    fb_rdaddr <= {v_cnt[7:0] - V_BPORCH[7:0], h_cnt[8:0] - H_BPORCH[8:0]};
+    fb_rdaddr <= {v_cnt[7:0] - V_BPORCH[7:0], h_cnt[8:0] - H_BPORCH[8:0] + 9'd8};
 end
 
 // Expand RGB332 → RGB888
