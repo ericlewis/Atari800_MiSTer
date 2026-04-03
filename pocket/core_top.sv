@@ -425,7 +425,7 @@ always @(posedge clk_vid)
     fb_rddata <= fb[fb_rdaddr];
 
 // Generated timing (proven stable sync)
-localparam H_BPORCH = 10'd5;
+localparam H_BPORCH = 10'd4;
 localparam H_ACTIVE = 10'd320;
 localparam H_TOTAL  = 10'd400;
 localparam V_BPORCH = 10'd10;
@@ -454,7 +454,7 @@ always @(posedge clk_vid) begin
         vid_de <= 1;
 
     // Read address: {line[7:0], pixel[8:0]}
-    fb_rdaddr <= {v_cnt[7:0], h_cnt[8:0] - H_BPORCH[8:0]};
+    fb_rdaddr <= {v_cnt[7:0] - V_BPORCH[7:0], h_cnt[8:0] - H_BPORCH[8:0]};
 end
 
 // Expand RGB332 → RGB888
