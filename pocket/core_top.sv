@@ -377,27 +377,48 @@ assign video_rgb_clock    = clk_vid;
 assign video_rgb_clock_90 = clk_vid_90;
 assign video_skip = 1'b0;
 
-// Latch ANTIC pixel data on ce_pix edges (clk_sys domain)
+// Line buffer approach: capture ANTIC scanlines into dual-port BRAM,
+// read them out at 12.288 MHz with our proven generated timing.
+// This eliminates the drift between ANTIC and output frame rates.
+
+// ce_pix edge detect
 reg ce_pix_raw_old = 0;
 wire ce_pix = ce_pix_raw & ~ce_pix_raw_old;
 always @(posedge clk_sys) ce_pix_raw_old <= ce_pix_raw;
 
-reg [7:0] r_lat, g_lat, b_lat;
-reg       hs_lat, vs_lat, hb_lat, vb_lat;
+// Line buffer: 2 lines x 512 pixels x 24 bits (ping-pong)
+// Write side: clk_sys at ce_pix rate
+// Read side: clk_vid at 12.288 MHz
+reg [23:0] linebuf [0:1023]; // 2 lines of 512 pixels
+reg  [8:0] lb_wraddr = 0;
+reg        lb_wrline = 0;  // which line buffer we're writing to
+reg [23:0] lb_rddata;
+reg  [9:0] lb_rdaddr;
+
+// Write: capture ANTIC pixels into current write line
+reg hs_prev = 0;
 always @(posedge clk_sys) begin
+    hs_prev <= HSync_o;
+
     if (ce_pix) begin
-        r_lat  <= Ro;
-        g_lat  <= Go;
-        b_lat  <= Bo;
-        hb_lat <= HBlank_o;
-        vb_lat <= VBlank_o;
-        hs_lat <= HSync_o;
-        vs_lat <= VSync_o;
+        if (~HBlank_o & ~VBlank_o) begin
+            linebuf[{lb_wrline, lb_wraddr}] <= {Ro, Go, Bo};
+            lb_wraddr <= lb_wraddr + 1'd1;
+        end
+    end
+
+    // On hsync rising edge: switch write line, reset write address
+    if (HSync_o & ~hs_prev) begin
+        lb_wrline <= ~lb_wrline;
+        lb_wraddr <= 0;
     end
 end
 
-// Pure generated timing at 12.288 MHz (identical to working test pattern).
-// Core pixel data fills the active area.
+// Read: output from the OTHER line at clk_vid rate
+always @(posedge clk_vid)
+    lb_rddata <= linebuf[lb_rdaddr];
+
+// Generated timing (identical to working test pattern)
 localparam H_BPORCH = 10'd10;
 localparam H_ACTIVE = 10'd320;
 localparam H_TOTAL  = 10'd400;
@@ -428,16 +449,12 @@ always @(posedge clk_vid) begin
     if (h_cnt >= H_BPORCH && h_cnt < H_ACTIVE + H_BPORCH &&
         v_cnt >= V_BPORCH && v_cnt < V_ACTIVE + V_BPORCH)
         vid_de <= 1;
+
+    // Read from the line NOT being written
+    lb_rdaddr <= {~lb_wrline, h_cnt[8:0]};
 end
 
-reg [7:0] vid_r, vid_g, vid_b;
-always @(posedge clk_vid) begin
-    vid_r <= r_lat;
-    vid_g <= g_lat;
-    vid_b <= b_lat;
-end
-
-assign video_rgb = vid_de ? {vid_r, vid_g, vid_b} : 24'd0;
+assign video_rgb = vid_de ? lb_rddata : 24'd0;
 assign video_de  = vid_de;
 assign video_vs  = vid_vs;
 assign video_hs  = vid_hs;
