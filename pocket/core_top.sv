@@ -425,7 +425,7 @@ always @(posedge clk_vid)
     fb_rddata <= fb[fb_rdaddr];
 
 // Generated timing (proven stable sync)
-localparam H_BPORCH = 10'd10;
+localparam H_BPORCH = 10'd0;
 localparam H_ACTIVE = 10'd320;
 localparam H_TOTAL  = 10'd400;
 localparam V_BPORCH = 10'd10;
