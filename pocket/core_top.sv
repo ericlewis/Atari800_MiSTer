@@ -381,21 +381,21 @@ assign video_skip = 1'b0;
 // read them out at 12.288 MHz with our proven generated timing.
 // This eliminates the drift between ANTIC and output frame rates.
 
-// Framebuffer: capture full ANTIC frame into dual-port BRAM,
-// read it out at 12.288 MHz with proven generated timing.
-// 256x256 pixels, 8-bit RGB332. ~57 M9K blocks.
+// Framebuffer: 320x256, 8-bit RGB332, dual-port BRAM.
+// Uses 512-pixel wide addressing (power of 2) for simple {y,x} concat.
+// Write: clk_sys at ce_pix rate. Read: clk_vid at 12.288 MHz.
 
 reg ce_pix_raw_old = 0;
 wire ce_pix = ce_pix_raw & ~ce_pix_raw_old;
 always @(posedge clk_sys) ce_pix_raw_old <= ce_pix_raw;
 
-// Framebuffer BRAM
-reg  [7:0] fb [0:65535];
+// FB BRAM: 256 lines x 512 pixels x 8 bits = 128K entries
+reg  [7:0] fb [0:131071]; // 2^17
 reg  [7:0] fb_rddata;
 
-// Write side (clk_sys): track pixel position, write RGB332
-reg  [7:0] fb_x = 0;
-reg  [7:0] fb_y = 0;
+// Write side (clk_sys)
+reg  [8:0] fb_x = 0;  // 0-319
+reg  [7:0] fb_y = 0;  // 0-255
 reg        fb_hs_prev = 0;
 reg        fb_vs_prev = 0;
 
@@ -403,7 +403,7 @@ always @(posedge clk_sys) begin
     fb_hs_prev <= HSync_o;
     fb_vs_prev <= VSync_o;
 
-    if (ce_pix & ~HBlank_o & ~VBlank_o) begin
+    if (ce_pix & ~HBlank_o & ~VBlank_o & fb_x < 320) begin
         fb[{fb_y, fb_x}] <= {Ro[7:5], Go[7:5], Bo[7:6]};
         fb_x <= fb_x + 1'd1;
     end
@@ -420,13 +420,13 @@ always @(posedge clk_sys) begin
 end
 
 // Read side (clk_vid)
-reg [15:0] fb_rdaddr;
+reg [16:0] fb_rdaddr;
 always @(posedge clk_vid)
     fb_rddata <= fb[fb_rdaddr];
 
 // Generated timing (proven stable sync)
-localparam H_BPORCH = 10'd10;
-localparam H_ACTIVE = 10'd256;
+localparam H_BPORCH = 10'd5;
+localparam H_ACTIVE = 10'd320;
 localparam H_TOTAL  = 10'd400;
 localparam V_BPORCH = 10'd10;
 localparam V_ACTIVE = 10'd240;
@@ -453,7 +453,8 @@ always @(posedge clk_vid) begin
         v_cnt >= V_BPORCH && v_cnt < V_ACTIVE + V_BPORCH)
         vid_de <= 1;
 
-    fb_rdaddr <= {v_cnt[7:0], h_cnt[7:0]};
+    // Read address: {line[7:0], pixel[8:0]}
+    fb_rdaddr <= {v_cnt[7:0], h_cnt[8:0] - H_BPORCH[8:0]};
 end
 
 // Expand RGB332 → RGB888
