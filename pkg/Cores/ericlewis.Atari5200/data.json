@@ -15,9 +15,9 @@
         "id": 1,
         "name": "Load Game",
         "required": true,
-        "parameters": "0x1",
+        "parameters": "0x201",
         "extensions": ["car", "a52", "bin", "rom"],
-        "address": "0x30000000"
+        "address": "0x20000000"
       }
     ]
   }

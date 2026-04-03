@@ -626,7 +626,7 @@ wire        cart_dl_wr;
 wire [27:0] cart_dl_addr;
 wire  [7:0] cart_dl_data;
 
-data_loader #(.ADDRESS_MASK_UPPER_4(4'h3), .ADDRESS_SIZE(28)) cart_dl (
+data_loader #(.ADDRESS_MASK_UPPER_4(4'h2), .ADDRESS_SIZE(28)) cart_dl (
     .clk_74a(clk_74a), .clk_memory(clk_sys),
     .bridge_wr(bridge_wr), .bridge_endian_little(bridge_endian_little),
     .bridge_addr(bridge_addr), .bridge_wr_data(bridge_wr_data),
@@ -642,10 +642,14 @@ reg  [7:0] ioctl_index;
 
 reg dl_downloading = 0;
 reg dl_s0, dl_s1;
+reg [7:0] dl_slot_id = 0;
 
 always @(posedge clk_74a) begin
-    if (dataslot_requestwrite) dl_downloading <= 1;
-    if (dataslot_allcomplete)  dl_downloading <= 0;
+    if (dataslot_requestwrite) begin
+        dl_downloading <= 1;
+        dl_slot_id <= dataslot_requestwrite_id[7:0];
+    end
+    if (dataslot_allcomplete) dl_downloading <= 0;
 end
 
 always @(posedge clk_sys) begin
@@ -655,7 +659,7 @@ always @(posedge clk_sys) begin
     ioctl_wr   <= cart_dl_wr;
     ioctl_addr <= cart_dl_addr[26:0];
     ioctl_dout <= cart_dl_data;
-    ioctl_index <= 8'd1; // cartridge
+    ioctl_index <= dl_slot_id; // 0=BIOS, 1=cartridge
 end
 
 // DMA to SDRAM for cartridge loading
