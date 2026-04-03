@@ -4,8 +4,8 @@
 // Outputs:
 //   outclk_0: 57.272728 MHz  (clk_sys — system clock + video clock)
 //   outclk_1: 114.545456 MHz (clk_mem — SDRAM, 180° phase)
-//   outclk_2: 3.579545 MHz   (clk_vid — pixel clock for Pocket scaler)
-//   outclk_3: 3.579545 MHz   (clk_vid_90 — pixel clock 90° for DDR)
+//   outclk_2: 7.159091 MHz   (clk_vid — pixel clock for Pocket scaler)
+//   outclk_3: 7.159091 MHz   (clk_vid_90 — pixel clock 90° for DDR)
 
 `timescale 1 ps / 1 ps
 
@@ -30,11 +30,11 @@ altera_pll #(
     .output_clock_frequency1   ("114.545456 MHz"),
     .phase_shift1              ("4365 ps"),
     .duty_cycle1               (50),
-    .output_clock_frequency2   ("3.579545 MHz"),
+    .output_clock_frequency2   ("7.159091 MHz"),
     .phase_shift2              ("0 ps"),
     .duty_cycle2               (50),
-    .output_clock_frequency3   ("3.579545 MHz"),
-    .phase_shift3              ("69832 ps"),
+    .output_clock_frequency3   ("7.159091 MHz"),
+    .phase_shift3              ("34917 ps"),
     .duty_cycle3               (50),
     .pll_type                  ("General"),
     .pll_subtype               ("General")
