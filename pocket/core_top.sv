@@ -371,68 +371,76 @@ wire [7:0] Ro, Go, Bo;
 wire       HBlank_o, VBlank_o, HSync_o, VSync_o;
 wire       ce_pix_raw;
 
-// Video output at ~7.16 MHz pixel clock
+// Video output using template's mf_pllbase (12.288 MHz, proven working)
 assign video_rgb_clock    = clk_vid;
 assign video_rgb_clock_90 = clk_vid_90;
 assign video_skip = 1'b0;
 
-// Generate a simple test pattern to verify video pipeline
-// 320x240 @ 60Hz with proper sync
-// Timing matches core-template exactly (12.288 MHz pixel clock)
+// ANTIC outputs at ce_pix_raw rate on clk_sys (57 MHz).
+// Latch video data on pixel clock enable, then sample into clk_vid.
+reg ce_pix_raw_old = 0;
+wire ce_pix = ce_pix_raw & ~ce_pix_raw_old;
+always @(posedge clk_sys) ce_pix_raw_old <= ce_pix_raw;
+
+// Latch on ce_pix in clk_sys domain
+reg [7:0] r_lat, g_lat, b_lat;
+reg       hs_lat, vs_lat, hb_lat, vb_lat;
+always @(posedge clk_sys) begin
+    if (ce_pix) begin
+        r_lat  <= Ro;
+        g_lat  <= Go;
+        b_lat  <= Bo;
+        hb_lat <= HBlank_o;
+        vb_lat <= VBlank_o;
+        hs_lat <= HSync_o;
+        if (~hs_lat & HSync_o) vs_lat <= VSync_o;
+    end
+end
+
+// Generate video timing at clk_vid (12.288 MHz)
+// The Atari runs at ~3.58 MHz pixel rate. At 12.288 MHz we oversample ~3.4x.
+// Use a simple counter to generate proper sync/DE at 12.288 MHz,
+// and fill with the latched core pixel data.
+
+// NTSC: ~228 color clocks/line, ~262 lines/frame
+// At 12.288 MHz: ~228 * (12.288/3.579) = ~783 clocks/line
+// Simplified: 400 H total, 320 active (like template) at ~60Hz
 localparam H_BPORCH = 10'd10;
 localparam H_ACTIVE = 10'd320;
 localparam H_TOTAL  = 10'd400;
-
 localparam V_BPORCH = 10'd10;
 localparam V_ACTIVE = 10'd240;
 localparam V_TOTAL  = 10'd512;
 
-// Counters — exact same pattern as core-template
 reg [9:0] h_cnt = 0;
 reg [9:0] v_cnt = 0;
-reg       tp_vs, tp_hs, tp_de;
-reg [23:0] tp_rgb;
+reg       vid_vs, vid_hs, vid_de;
 
-always @(posedge clk_vid or negedge reset_n) begin
-    if (~reset_n) begin
+always @(posedge clk_vid) begin
+    vid_de <= 0;
+    vid_vs <= 0;
+    vid_hs <= 0;
+
+    h_cnt <= h_cnt + 1'd1;
+    if (h_cnt == H_TOTAL - 1) begin
         h_cnt <= 0;
-        v_cnt <= 0;
-    end else begin
-        tp_de <= 0;
-        tp_vs <= 0;
-        tp_hs <= 0;
-        tp_rgb <= 24'd0;
-
-        h_cnt <= h_cnt + 1'd1;
-        if (h_cnt == H_TOTAL - 1) begin
-            h_cnt <= 0;
-            v_cnt <= v_cnt + 1'd1;
-            if (v_cnt == V_TOTAL - 1)
-                v_cnt <= 0;
-        end
-
-        // Sync pulses in back porch
-        if (h_cnt == 0 && v_cnt == 0)
-            tp_vs <= 1;
-        if (h_cnt == 3)
-            tp_hs <= 1;
-
-        // Active area
-        if (h_cnt >= H_BPORCH && h_cnt < H_ACTIVE + H_BPORCH &&
-            v_cnt >= V_BPORCH && v_cnt < V_ACTIVE + V_BPORCH) begin
-            tp_de <= 1;
-            // Color bars
-            tp_rgb[23:16] <= (h_cnt[6]) ? 8'hFF : 8'h40;
-            tp_rgb[15:8]  <= (h_cnt[5]) ? 8'hFF : 8'h40;
-            tp_rgb[7:0]   <= (h_cnt[4]) ? 8'hFF : 8'h40;
-        end
+        v_cnt <= v_cnt + 1'd1;
+        if (v_cnt == V_TOTAL - 1)
+            v_cnt <= 0;
     end
+
+    if (h_cnt == 0 && v_cnt == 0) vid_vs <= 1;
+    if (h_cnt == 3) vid_hs <= 1;
+
+    if (h_cnt >= H_BPORCH && h_cnt < H_ACTIVE + H_BPORCH &&
+        v_cnt >= V_BPORCH && v_cnt < V_ACTIVE + V_BPORCH)
+        vid_de <= 1;
 end
 
-assign video_rgb = tp_de ? tp_rgb : 24'd0;
-assign video_de  = tp_de;
-assign video_vs  = tp_vs;
-assign video_hs  = tp_hs;
+assign video_rgb = vid_de ? {r_lat, g_lat, b_lat} : 24'd0;
+assign video_de  = vid_de;
+assign video_vs  = vid_vs;
+assign video_hs  = vid_hs;
 
 // ========================================================================
 //  Audio Output (I2S)
