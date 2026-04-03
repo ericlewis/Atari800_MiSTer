@@ -381,52 +381,52 @@ assign video_skip = 1'b0;
 // read them out at 12.288 MHz with our proven generated timing.
 // This eliminates the drift between ANTIC and output frame rates.
 
-// ce_pix edge detect
+// Framebuffer: capture full ANTIC frame into dual-port BRAM,
+// read it out at 12.288 MHz with proven generated timing.
+// 256x256 pixels, 8-bit RGB332. ~57 M9K blocks.
+
 reg ce_pix_raw_old = 0;
 wire ce_pix = ce_pix_raw & ~ce_pix_raw_old;
 always @(posedge clk_sys) ce_pix_raw_old <= ce_pix_raw;
 
-// Line buffer: 2 lines x 512 pixels x 24 bits (ping-pong)
-// Write side: clk_sys at ce_pix rate
-// Read side: clk_vid at 12.288 MHz
-reg [23:0] linebuf [0:1023]; // 2 lines of 512 pixels
-reg  [8:0] lb_wraddr = 0;
-reg        lb_wrline = 0;  // which line buffer we're writing to
-reg [23:0] lb_rddata;
-reg  [9:0] lb_rdaddr;
+// Framebuffer BRAM
+reg  [7:0] fb [0:65535];
+reg  [7:0] fb_rddata;
 
-// Latch ANTIC vsync for vertical sync in clk_vid domain
-reg vs_lat = 0;
+// Write side (clk_sys): track pixel position, write RGB332
+reg  [7:0] fb_x = 0;
+reg  [7:0] fb_y = 0;
+reg        fb_hs_prev = 0;
+reg        fb_vs_prev = 0;
+
 always @(posedge clk_sys) begin
-    if (ce_pix) vs_lat <= VSync_o;
-end
+    fb_hs_prev <= HSync_o;
+    fb_vs_prev <= VSync_o;
 
-// Write: capture ANTIC pixels into current write line
-reg hs_prev = 0;
-always @(posedge clk_sys) begin
-    hs_prev <= HSync_o;
-
-    if (ce_pix) begin
-        if (~HBlank_o & ~VBlank_o) begin
-            linebuf[{lb_wrline, lb_wraddr}] <= {Ro, Go, Bo};
-            lb_wraddr <= lb_wraddr + 1'd1;
-        end
+    if (ce_pix & ~HBlank_o & ~VBlank_o) begin
+        fb[{fb_y, fb_x}] <= {Ro[7:5], Go[7:5], Bo[7:6]};
+        fb_x <= fb_x + 1'd1;
     end
 
-    // On hsync rising edge: switch write line, reset write address
-    if (HSync_o & ~hs_prev) begin
-        lb_wrline <= ~lb_wrline;
-        lb_wraddr <= 0;
+    // New line
+    if (HSync_o & ~fb_hs_prev) begin
+        fb_x <= 0;
+        if (~VBlank_o) fb_y <= fb_y + 1'd1;
     end
+
+    // New frame
+    if (VSync_o & ~fb_vs_prev)
+        fb_y <= 0;
 end
 
-// Read: output from the OTHER line at clk_vid rate
+// Read side (clk_vid)
+reg [15:0] fb_rdaddr;
 always @(posedge clk_vid)
-    lb_rddata <= linebuf[lb_rdaddr];
+    fb_rddata <= fb[fb_rdaddr];
 
-// Generated timing (identical to working test pattern)
+// Generated timing (proven stable sync)
 localparam H_BPORCH = 10'd10;
-localparam H_ACTIVE = 10'd320;
+localparam H_ACTIVE = 10'd256;
 localparam H_TOTAL  = 10'd400;
 localparam V_BPORCH = 10'd10;
 localparam V_ACTIVE = 10'd240;
@@ -435,37 +435,33 @@ localparam V_TOTAL  = 10'd512;
 reg [9:0] h_cnt = 0;
 reg [9:0] v_cnt = 0;
 reg       vid_vs = 0, vid_hs = 0, vid_de = 0;
-reg       vs_prev = 0;
 
 always @(posedge clk_vid) begin
-    vid_de <= 0;
-    vid_vs <= 0;
-    vid_hs <= 0;
+    vid_de <= 0; vid_vs <= 0; vid_hs <= 0;
 
     h_cnt <= h_cnt + 1'd1;
     if (h_cnt == H_TOTAL - 1) begin
         h_cnt <= 0;
         v_cnt <= v_cnt + 1'd1;
+        if (v_cnt == V_TOTAL - 1) v_cnt <= 0;
     end
 
-    // Lock vertical to ANTIC vsync — prevents vertical drift
-    if (vs_lat & ~vs_prev) begin
-        v_cnt <= 0;
-        vid_vs <= 1;
-    end
-    vs_prev <= vs_lat;
-
+    if (h_cnt == 0 && v_cnt == 0) vid_vs <= 1;
     if (h_cnt == 3) vid_hs <= 1;
 
     if (h_cnt >= H_BPORCH && h_cnt < H_ACTIVE + H_BPORCH &&
         v_cnt >= V_BPORCH && v_cnt < V_ACTIVE + V_BPORCH)
         vid_de <= 1;
 
-    // Read from the line NOT being written
-    lb_rdaddr <= {~lb_wrline, h_cnt[8:0]};
+    fb_rdaddr <= {v_cnt[7:0], h_cnt[7:0]};
 end
 
-assign video_rgb = vid_de ? lb_rddata : 24'd0;
+// Expand RGB332 → RGB888
+wire [7:0] exp_r = {fb_rddata[7:5], fb_rddata[7:5], fb_rddata[7:6]};
+wire [7:0] exp_g = {fb_rddata[4:2], fb_rddata[4:2], fb_rddata[4:3]};
+wire [7:0] exp_b = {fb_rddata[1:0], fb_rddata[1:0], fb_rddata[1:0], fb_rddata[1:0]};
+
+assign video_rgb = vid_de ? {exp_r, exp_g, exp_b} : 24'd0;
 assign video_de  = vid_de;
 assign video_vs  = vid_vs;
 assign video_hs  = vid_hs;
