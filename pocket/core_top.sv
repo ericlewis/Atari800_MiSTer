@@ -661,31 +661,11 @@ end
 // DMA to SDRAM for cartridge loading
 wire       sdram_ready;
 wire       dma_ready;
-reg        dma_req = 0;
-reg        ioctl_wait = 1;
-wire       file_download = ioctl_download && ioctl_index != 99;
+wire       file_download = ioctl_download;
 
-always @(posedge clk_sys) begin
-    reg started = 0;
-    if (sdram_ready) begin
-        if (!started) begin
-            started <= 1;
-            ioctl_wait <= 0;
-        end
-        if (ioctl_index != 0 && ioctl_download) begin
-            if (dma_ready) begin
-                ioctl_wait <= 0;
-                dma_req <= 0;
-            end
-            if (ioctl_wr) begin
-                ioctl_wait <= 1;
-                dma_req <= 1;
-            end
-        end
-        else
-            ioctl_wait <= 0;
-    end
-end
+// Directly pass data_loader writes to DMA — no handshake needed
+// The atari5200top handles DMA_REQ synchronously
+wire       dma_req = ioctl_wr & ioctl_download;
 
 // ========================================================================
 //  Atari 5200 Core
@@ -694,7 +674,7 @@ end
 wire [15:0] laudio, raudio;
 wire        cpu_halt;
 
-wire  [7:0] cart_select = 8'd0; // TODO: from hps_ext equivalent
+wire  [7:0] cart_select = ioctl_download ? 8'd1 : 8'd1; // Standard 32KB cartridge
 wire        set_reset = 0;
 wire        set_pause = 0;
 wire  [2:0] atari_hotkeys;
