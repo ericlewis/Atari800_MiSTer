@@ -396,8 +396,8 @@ always @(posedge clk_sys) begin
     end
 end
 
-// Generated timing at 12.288 MHz (proven sync) with ANTIC pixel data.
-// Sync h_cnt to ANTIC hsync edges so picture aligns.
+// Pure generated timing at 12.288 MHz (identical to working test pattern).
+// Core pixel data fills the active area.
 localparam H_BPORCH = 10'd10;
 localparam H_ACTIVE = 10'd320;
 localparam H_TOTAL  = 10'd400;
@@ -407,8 +407,7 @@ localparam V_TOTAL  = 10'd512;
 
 reg [9:0] h_cnt = 0;
 reg [9:0] v_cnt = 0;
-reg       vid_vs, vid_hs, vid_de;
-reg       hs_lat_prev = 0, vs_lat_prev = 0;
+reg       vid_vs = 0, vid_hs = 0, vid_de = 0;
 
 always @(posedge clk_vid) begin
     vid_de <= 0;
@@ -423,20 +422,8 @@ always @(posedge clk_vid) begin
             v_cnt <= 0;
     end
 
-    // Sync to ANTIC: reset h_cnt on hsync rising edge
-    hs_lat_prev <= hs_lat;
-    if (hs_lat & ~hs_lat_prev) begin
-        h_cnt <= 0;
-        vid_hs <= 1;
-        v_cnt <= v_cnt + 1'd1;
-
-        // Sync to ANTIC: reset v_cnt on vsync rising edge
-        vs_lat_prev <= vs_lat;
-        if (vs_lat & ~vs_lat_prev) begin
-            v_cnt <= 0;
-            vid_vs <= 1;
-        end
-    end
+    if (h_cnt == 0 && v_cnt == 0) vid_vs <= 1;
+    if (h_cnt == 3) vid_hs <= 1;
 
     if (h_cnt >= H_BPORCH && h_cnt < H_ACTIVE + H_BPORCH &&
         v_cnt >= V_BPORCH && v_cnt < V_ACTIVE + V_BPORCH)
