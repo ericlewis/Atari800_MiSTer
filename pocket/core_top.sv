@@ -395,6 +395,12 @@ reg        lb_wrline = 0;  // which line buffer we're writing to
 reg [23:0] lb_rddata;
 reg  [9:0] lb_rdaddr;
 
+// Latch ANTIC vsync for vertical sync in clk_vid domain
+reg vs_lat = 0;
+always @(posedge clk_sys) begin
+    if (ce_pix) vs_lat <= VSync_o;
+end
+
 // Write: capture ANTIC pixels into current write line
 reg hs_prev = 0;
 always @(posedge clk_sys) begin
