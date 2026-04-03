@@ -756,8 +756,7 @@ set_global_assignment -name QIP_FILE mf_pllbase.qip
 # Bridge library
 set_global_assignment -name SYSTEMVERILOG_FILE mister_pocket_bridge/bridge_interact.sv
 
-# Pocket-specific
-set_global_assignment -name SYSTEMVERILOG_FILE dpram.sv
+# dpram is already in bram.vhd
 
 # Shared Atari 5200 RTL (from parent)
 set_global_assignment -name VHDL_FILE ../rtl/common/a8core/atari5200core.vhd
