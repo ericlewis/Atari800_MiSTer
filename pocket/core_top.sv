@@ -340,6 +340,8 @@ bridge_interact #(.NUM_REGS(16)) interact_bridge (
 wire clk_sys;
 wire clk_mem;
 wire clk_vdo;
+wire clk_vid;
+wire clk_vid_90;
 
 pll pll_inst (
     .refclk   (clk_74a),
@@ -347,6 +349,8 @@ pll pll_inst (
     .outclk_0 (clk_sys),
     .outclk_1 (clk_mem),
     .outclk_2 (clk_vdo),
+    .outclk_3 (clk_vid),
+    .outclk_4 (clk_vid_90),
     .locked   (pll_core_locked)
 );
 
@@ -358,27 +362,29 @@ wire [7:0] Ro, Go, Bo;
 wire       HBlank_o, VBlank_o, HSync_o, VSync_o;
 wire       ce_pix_raw;
 
-// CE_PIXEL edge detect (same as MiSTer Atari5200.sv)
-reg ce_pix_raw_old = 0;
-wire ce_pix = ce_pix_raw & ~ce_pix_raw_old;
-always @(posedge clk_vdo) ce_pix_raw_old <= ce_pix_raw;
+// Video output at dedicated ~7MHz pixel clock (no skip)
+assign video_rgb_clock    = clk_vid;
+assign video_rgb_clock_90 = clk_vid_90;
+assign video_skip = 1'b0;
 
-// Resync hsync/vsync on pixel clock
-reg hsync_r, vsync_r;
-always @(posedge clk_vdo) begin
-    if (ce_pix) begin
-        hsync_r <= HSync_o;
-        if (~hsync_r & HSync_o) vsync_r <= VSync_o;
-    end
+// Register video signals from clk_vdo to clk_vid domain
+reg [7:0]  vid_r, vid_g, vid_b;
+reg        vid_hs, vid_vs, vid_hb, vid_vb;
+
+always @(posedge clk_vid) begin
+    vid_r  <= Ro;
+    vid_g  <= Go;
+    vid_b  <= Bo;
+    vid_hb <= HBlank_o;
+    vid_vb <= VBlank_o;
+    vid_hs <= HSync_o;
+    vid_vs <= VSync_o;
 end
 
-assign video_rgb_clock    = clk_vdo;
-assign video_rgb_clock_90 = clk_vdo; // TODO: generate 90° phase from PLL
-assign video_rgb = (~HBlank_o & ~VBlank_o) ? {Ro, Go, Bo} : 24'd0;
-assign video_de  = ~HBlank_o & ~VBlank_o;
-assign video_skip = ~ce_pix;
-assign video_vs  = vsync_r;
-assign video_hs  = hsync_r;
+assign video_rgb = (~vid_hb & ~vid_vb) ? {vid_r, vid_g, vid_b} : 24'd0;
+assign video_de  = ~vid_hb & ~vid_vb;
+assign video_vs  = vid_vs;
+assign video_hs  = vid_hs;
 
 // ========================================================================
 //  Audio Output (I2S)
@@ -456,12 +462,12 @@ altddio_out #(
 //  Reset
 // ========================================================================
 
-reg [19:0] reset_counter = 20'd200000;
+reg [19:0] reset_counter = 20'd500000; // ~9ms at 57MHz, enough for SDRAM init
 wire       atari_reset = |reset_counter;
 
 always @(posedge clk_sys) begin
-    if (status[0] | !pll_core_locked)
-        reset_counter <= 20'd200000;
+    if (status[0])
+        reset_counter <= 20'd500000;
     else if (reset_counter)
         reset_counter <= reset_counter - 1'd1;
 end
