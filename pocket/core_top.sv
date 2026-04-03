@@ -322,7 +322,7 @@ core_bridge_cmd icb (
 
 wire [127:0] status;
 
-bridge_interact #(.NUM_REGS(8)) interact_bridge (
+bridge_interact #(.NUM_REGS(16)) interact_bridge (
     .clk_74a        (clk_74a),
     .clk_sys        (clk_sys),
     .bridge_addr    (bridge_addr),
