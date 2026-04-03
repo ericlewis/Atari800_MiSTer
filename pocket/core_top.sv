@@ -667,9 +667,37 @@ wire       sdram_ready;
 wire       dma_ready;
 wire       file_download = ioctl_download;
 
-// Directly pass data_loader writes to DMA — no handshake needed
-// The atari5200top handles DMA_REQ synchronously
-wire       dma_req = ioctl_wr & ioctl_download;
+// DMA handshake: hold dma_req HIGH until dma_ready acknowledges
+// Buffer incoming bytes in a FIFO since data_loader fires faster than DMA can consume
+reg  [7:0]  dma_fifo_data [0:255];
+reg [26:0]  dma_fifo_addr [0:255];
+reg  [7:0]  dma_fifo_wr_ptr = 0;
+reg  [7:0]  dma_fifo_rd_ptr = 0;
+reg         dma_req = 0;
+reg  [7:0]  dma_data_out;
+reg [25:0]  dma_addr_out;
+
+// Fill FIFO from data_loader (only for cart, index==1)
+always @(posedge clk_sys) begin
+    if (ioctl_wr && ioctl_index == 8'd1) begin
+        dma_fifo_data[dma_fifo_wr_ptr] <= ioctl_dout;
+        dma_fifo_addr[dma_fifo_wr_ptr] <= ioctl_addr;
+        dma_fifo_wr_ptr <= dma_fifo_wr_ptr + 1'd1;
+    end
+end
+
+// Drain FIFO: hold dma_req until dma_ready
+always @(posedge clk_sys) begin
+    if (dma_req && dma_ready) begin
+        dma_req <= 0;
+    end
+    else if (!dma_req && dma_fifo_rd_ptr != dma_fifo_wr_ptr) begin
+        dma_data_out <= dma_fifo_data[dma_fifo_rd_ptr];
+        dma_addr_out <= dma_fifo_addr[dma_fifo_rd_ptr][25:0];
+        dma_fifo_rd_ptr <= dma_fifo_rd_ptr + 1'd1;
+        dma_req <= 1;
+    end
+end
 
 // ========================================================================
 //  Atari 5200 Core
@@ -709,10 +737,10 @@ atari5200top atari5200top_inst (
     .HOT_KEYS     (atari_hotkeys),
     .COLD_RESET_MENU(status[0]),
 
-    // DMA for cartridge loading
-    .HPS_DMA_ADDR (ioctl_index == 0 ? {15'b100111000001000, ioctl_addr[10:0]} : ioctl_addr[25:0]),
+    // DMA for cartridge loading — from FIFO
+    .HPS_DMA_ADDR (dma_addr_out),
     .HPS_DMA_REQ  (dma_req),
-    .HPS_DMA_DATA_OUT(ioctl_dout),
+    .HPS_DMA_DATA_OUT(dma_data_out),
     .HPS_DMA_READY(dma_ready),
 
     .VGA_VS       (VSync_o),
