@@ -337,19 +337,30 @@ bridge_interact #(.NUM_REGS(16)) interact_bridge (
 //  Clocks: 74.25 MHz → 57.27 / 114.55 / 57.27 MHz
 // ========================================================================
 
-wire clk_sys;     // 57.27 MHz (system + video base)
+wire clk_sys;     // 57.27 MHz
 wire clk_mem;     // 114.55 MHz (SDRAM)
-wire clk_vid;     // 3.58 MHz (Atari color clock = pixel clock for scaler)
-wire clk_vid_90;  // 3.58 MHz 90° (DDR)
+wire clk_vid;     // 12.288 MHz (video pixel clock — from template PLL)
+wire clk_vid_90;  // 12.288 MHz 90°
 
-pll pll_inst (
+wire pll_core_locked_a, pll_core_locked_b;
+assign pll_core_locked = pll_core_locked_a & pll_core_locked_b;
+
+// Core PLL: system + SDRAM clocks
+pll pll_core (
     .refclk   (clk_74a),
     .rst      (1'b0),
     .outclk_0 (clk_sys),
     .outclk_1 (clk_mem),
-    .outclk_2 (clk_vid),
-    .outclk_3 (clk_vid_90),
-    .locked   (pll_core_locked)
+    .locked   (pll_core_locked_a)
+);
+
+// Video PLL: uses template mf_pllbase (12.288 MHz, known working)
+mf_pllbase pll_vid (
+    .refclk   (clk_74a),
+    .rst      (1'b0),
+    .outclk_0 (clk_vid),
+    .outclk_1 (clk_vid_90),
+    .locked   (pll_core_locked_b)
 );
 
 // ========================================================================
@@ -367,42 +378,58 @@ assign video_skip = 1'b0;
 
 // Generate a simple test pattern to verify video pipeline
 // 320x240 @ 60Hz with proper sync
+// Timing matches core-template exactly (12.288 MHz pixel clock)
+localparam H_BPORCH = 10'd10;
 localparam H_ACTIVE = 10'd320;
-localparam H_FRONT  = 10'd8;
-localparam H_SYNC   = 10'd32;
-localparam H_BACK   = 10'd40;
-localparam H_TOTAL  = H_ACTIVE + H_FRONT + H_SYNC + H_BACK; // 400
+localparam H_TOTAL  = 10'd400;
 
+localparam V_BPORCH = 10'd10;
 localparam V_ACTIVE = 10'd240;
-localparam V_FRONT  = 10'd3;
-localparam V_SYNC   = 10'd5;
-localparam V_BACK   = 10'd14;
-localparam V_TOTAL  = V_ACTIVE + V_FRONT + V_SYNC + V_BACK; // 262
+localparam V_TOTAL  = 10'd512;
 
+// Counters — exact same pattern as core-template
 reg [9:0] h_cnt = 0;
 reg [9:0] v_cnt = 0;
+reg       tp_vs, tp_hs, tp_de;
+reg [23:0] tp_rgb;
 
-always @(posedge clk_vid) begin
-    h_cnt <= h_cnt + 1'd1;
-    if (h_cnt == H_TOTAL - 1) begin
+always @(posedge clk_vid or negedge reset_n) begin
+    if (~reset_n) begin
         h_cnt <= 0;
-        v_cnt <= v_cnt + 1'd1;
-        if (v_cnt == V_TOTAL - 1)
-            v_cnt <= 0;
+        v_cnt <= 0;
+    end else begin
+        tp_de <= 0;
+        tp_vs <= 0;
+        tp_hs <= 0;
+        tp_rgb <= 24'd0;
+
+        h_cnt <= h_cnt + 1'd1;
+        if (h_cnt == H_TOTAL - 1) begin
+            h_cnt <= 0;
+            v_cnt <= v_cnt + 1'd1;
+            if (v_cnt == V_TOTAL - 1)
+                v_cnt <= 0;
+        end
+
+        // Sync pulses in back porch
+        if (h_cnt == 0 && v_cnt == 0)
+            tp_vs <= 1;
+        if (h_cnt == 3)
+            tp_hs <= 1;
+
+        // Active area
+        if (h_cnt >= H_BPORCH && h_cnt < H_ACTIVE + H_BPORCH &&
+            v_cnt >= V_BPORCH && v_cnt < V_ACTIVE + V_BPORCH) begin
+            tp_de <= 1;
+            // Color bars
+            tp_rgb[23:16] <= (h_cnt[6]) ? 8'hFF : 8'h40;
+            tp_rgb[15:8]  <= (h_cnt[5]) ? 8'hFF : 8'h40;
+            tp_rgb[7:0]   <= (h_cnt[4]) ? 8'hFF : 8'h40;
+        end
     end
 end
 
-wire tp_de = (h_cnt < H_ACTIVE) && (v_cnt < V_ACTIVE);
-wire tp_hs = (h_cnt >= H_ACTIVE + H_FRONT) && (h_cnt < H_ACTIVE + H_FRONT + H_SYNC);
-wire tp_vs = (v_cnt >= V_ACTIVE + V_FRONT) && (v_cnt < V_ACTIVE + V_FRONT + V_SYNC);
-
-// Color bars test pattern
-wire [7:0] tp_r = h_cnt[6] ? 8'hFF : 8'h00;
-wire [7:0] tp_g = h_cnt[5] ? 8'hFF : 8'h00;
-wire [7:0] tp_b = h_cnt[4] ? 8'hFF : 8'h00;
-
-// Use test pattern for now — swap to core video once BIOS loading works
-assign video_rgb = tp_de ? {tp_r, tp_g, tp_b} : 24'd0;
+assign video_rgb = tp_de ? tp_rgb : 24'd0;
 assign video_de  = tp_de;
 assign video_vs  = tp_vs;
 assign video_hs  = tp_hs;
