@@ -360,49 +360,52 @@ wire [7:0] Ro, Go, Bo;
 wire       HBlank_o, VBlank_o, HSync_o, VSync_o;
 wire       ce_pix_raw;
 
-// Video: use dedicated ~3.58 MHz color clock as pixel clock (no skip)
-// Register video from clk_sys domain into clk_vid domain
+// Video output at ~7.16 MHz pixel clock
 assign video_rgb_clock    = clk_vid;
 assign video_rgb_clock_90 = clk_vid_90;
 assign video_skip = 1'b0;
 
-// ce_pix edge detect (from ANTIC, in clk_sys domain)
-reg ce_pix_raw_old = 0;
-wire ce_pix = ce_pix_raw & ~ce_pix_raw_old;
-always @(posedge clk_sys) ce_pix_raw_old <= ce_pix_raw;
+// Generate a simple test pattern to verify video pipeline
+// 320x240 @ 60Hz with proper sync
+localparam H_ACTIVE = 10'd320;
+localparam H_FRONT  = 10'd8;
+localparam H_SYNC   = 10'd32;
+localparam H_BACK   = 10'd40;
+localparam H_TOTAL  = H_ACTIVE + H_FRONT + H_SYNC + H_BACK; // 400
 
-// Latch video on pixel enable in clk_sys domain
-reg [7:0] r_lat, g_lat, b_lat;
-reg       hs_lat, vs_lat, hb_lat, vb_lat;
-always @(posedge clk_sys) begin
-    if (ce_pix) begin
-        r_lat  <= Ro;
-        g_lat  <= Go;
-        b_lat  <= Bo;
-        hb_lat <= HBlank_o;
-        vb_lat <= VBlank_o;
-        hs_lat <= HSync_o;
-        if (~hs_lat & HSync_o) vs_lat <= VSync_o;
+localparam V_ACTIVE = 10'd240;
+localparam V_FRONT  = 10'd3;
+localparam V_SYNC   = 10'd5;
+localparam V_BACK   = 10'd14;
+localparam V_TOTAL  = V_ACTIVE + V_FRONT + V_SYNC + V_BACK; // 262
+
+reg [9:0] h_cnt = 0;
+reg [9:0] v_cnt = 0;
+
+always @(posedge clk_vid) begin
+    h_cnt <= h_cnt + 1'd1;
+    if (h_cnt == H_TOTAL - 1) begin
+        h_cnt <= 0;
+        v_cnt <= v_cnt + 1'd1;
+        if (v_cnt == V_TOTAL - 1)
+            v_cnt <= 0;
     end
 end
 
-// Sample latched values into clk_vid domain
-reg [7:0] vid_r, vid_g, vid_b;
-reg       vid_hs, vid_vs, vid_hb, vid_vb;
-always @(posedge clk_vid) begin
-    vid_r  <= r_lat;
-    vid_g  <= g_lat;
-    vid_b  <= b_lat;
-    vid_hb <= hb_lat;
-    vid_vb <= vb_lat;
-    vid_hs <= hs_lat;
-    vid_vs <= vs_lat;
-end
+wire tp_de = (h_cnt < H_ACTIVE) && (v_cnt < V_ACTIVE);
+wire tp_hs = (h_cnt >= H_ACTIVE + H_FRONT) && (h_cnt < H_ACTIVE + H_FRONT + H_SYNC);
+wire tp_vs = (v_cnt >= V_ACTIVE + V_FRONT) && (v_cnt < V_ACTIVE + V_FRONT + V_SYNC);
 
-assign video_rgb = (~vid_hb & ~vid_vb) ? {vid_r, vid_g, vid_b} : 24'd0;
-assign video_de  = ~vid_hb & ~vid_vb;
-assign video_vs  = vid_vs;
-assign video_hs  = vid_hs;
+// Color bars test pattern
+wire [7:0] tp_r = h_cnt[6] ? 8'hFF : 8'h00;
+wire [7:0] tp_g = h_cnt[5] ? 8'hFF : 8'h00;
+wire [7:0] tp_b = h_cnt[4] ? 8'hFF : 8'h00;
+
+// Use test pattern for now — swap to core video once BIOS loading works
+assign video_rgb = tp_de ? {tp_r, tp_g, tp_b} : 24'd0;
+assign video_de  = tp_de;
+assign video_vs  = tp_vs;
+assign video_hs  = tp_hs;
 
 // ========================================================================
 //  Audio Output (I2S)
