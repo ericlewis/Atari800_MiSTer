@@ -45,11 +45,14 @@ jobs:
       - name: Package release artifact
         run: |
           mkdir -p release/Cores/ericlewis.Atari5200
+          mkdir -p release/Cores/ericlewis.A5200
           mkdir -p release/Platforms
           mkdir -p release/Assets/a5200/common
 
           cp pocket/output_files/bitstream.rbf_r release/Cores/ericlewis.Atari5200/
           cp pkg/Cores/ericlewis.Atari5200/*.json release/Cores/ericlewis.Atari5200/
+          cp pocket/output_files/bitstream.rbf_r release/Cores/ericlewis.A5200/
+          cp pkg/Cores/ericlewis.Atari5200/*.json release/Cores/ericlewis.A5200/
           cp pkg/Platforms/a5200.json release/Platforms/
 
       - name: Upload release artifact
