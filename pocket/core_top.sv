@@ -382,6 +382,8 @@ mf_pllbase pll_vid (
 wire [7:0] Ro, Go, Bo;
 wire       HBlank_o, VBlank_o, HSync_o, VSync_o;
 wire       ce_pix_raw;
+wire       debug_video_active;
+wire [23:0] debug_video_rgb;
 
 // Video at 12.288 MHz (template PLL, proven sync).
 // Sync counters to ANTIC's hsync/vsync edges so the picture aligns.
@@ -474,7 +476,7 @@ wire [7:0] exp_r = {fb_rddata[7:5], fb_rddata[7:5], fb_rddata[7:6]};
 wire [7:0] exp_g = {fb_rddata[4:2], fb_rddata[4:2], fb_rddata[4:3]};
 wire [7:0] exp_b = {fb_rddata[1:0], fb_rddata[1:0], fb_rddata[1:0], fb_rddata[1:0]};
 
-assign video_rgb = vid_de ? {exp_r, exp_g, exp_b} : 24'd0;
+assign video_rgb = vid_de ? (debug_video_active ? debug_video_rgb : {exp_r, exp_g, exp_b}) : 24'd0;
 assign video_de  = vid_de;
 assign video_vs  = vid_vs;
 assign video_hs  = vid_hs;
@@ -559,11 +561,22 @@ reg [19:0] reset_counter = 20'd500000;
 wire       loader_busy = ioctl_download | dma_req | (dma_fifo_rd_ptr != dma_fifo_wr_ptr) | cart_flush_pending;
 wire       atari_reset = |reset_counter;
 reg        loader_busy_d = 0;
+reg        fb_activity = 0;
 assign core_running = sdram_ready && !atari_reset;
 assign core_setup_done = sdram_ready && !loader_busy && !atari_reset;
+assign debug_video_active = !sdram_ready | loader_busy | atari_reset | !fb_activity;
+assign debug_video_rgb =
+    !sdram_ready ? 24'hFF0000 :
+    loader_busy  ? 24'hFFFF00 :
+    atari_reset  ? 24'h0000FF :
+                   24'h00FF00;
 
 always @(posedge clk_sys) begin
     loader_busy_d <= loader_busy;
+    if (atari_reset || loader_busy)
+        fb_activity <= 0;
+    else if (ce_pix & ~HBlank_o & ~VBlank_o)
+        fb_activity <= 1;
 
     // Do not hold the whole core in reset during APF loading, because that also
     // keeps the SDRAM path from becoming ready. Instead, issue a reset pulse
