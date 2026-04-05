@@ -7,8 +7,8 @@
       "description": "Atari 5200 SuperSystem",
       "author": "ericlewis",
       "url": "https://github.com/ericlewis/Atari5200_Pocket",
-      "version": "0.1.0",
-      "date_release": "2026-04-03"
+      "version": "0.1.1",
+      "date_release": "2026-04-05"
     },
     "framework": {
       "target_product": "Analogue Pocket",
