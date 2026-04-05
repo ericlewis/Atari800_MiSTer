@@ -555,10 +555,18 @@ altddio_out #(
 
 reg [19:0] reset_counter = 20'd500000;
 wire       loader_busy = ioctl_download | dma_req | (dma_fifo_rd_ptr != dma_fifo_wr_ptr) | cart_flush_pending;
-wire       atari_reset = |reset_counter | loader_busy;
+wire       atari_reset = |reset_counter;
+reg        loader_busy_d = 0;
 
 always @(posedge clk_sys) begin
-    if (reset_request | loader_busy)
+    loader_busy_d <= loader_busy;
+
+    // Do not hold the whole core in reset during APF loading, because that also
+    // keeps the SDRAM path from becoming ready. Instead, issue a reset pulse
+    // after the loader finishes draining.
+    if (reset_request)
+        reset_counter <= 20'd500000;
+    else if (loader_busy_d && !loader_busy)
         reset_counter <= 20'd500000;
     else if (reset_counter)
         reset_counter <= reset_counter - 1'd1;
