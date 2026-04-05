@@ -321,6 +321,11 @@ core_bridge_cmd icb (
 // ========================================================================
 
 wire [127:0] status;
+wire        swap_joysticks;
+wire  [7:0] cart_type_override;
+wire  [2:0] cpu_speed_setting;
+wire        clip_sides;
+wire        reset_request;
 
 bridge_interact #(.NUM_REGS(16)) interact_bridge (
     .clk_74a        (clk_74a),
@@ -330,7 +335,12 @@ bridge_interact #(.NUM_REGS(16)) interact_bridge (
     .bridge_wr_data (bridge_wr_data),
     .bridge_rd      (bridge_rd & (bridge_addr[31:24] == 8'h00)),
     .bridge_rd_data (interact_bridge_rd_data),
-    .status         (status)
+    .status         (status),
+    .swap_joysticks (swap_joysticks),
+    .cart_type_override(cart_type_override),
+    .cpu_speed      (cpu_speed_setting),
+    .clip_sides     (clip_sides),
+    .reset_request  (reset_request)
 );
 
 // ========================================================================
@@ -548,7 +558,7 @@ wire       loader_busy = ioctl_download | dma_req | (dma_fifo_rd_ptr != dma_fifo
 wire       atari_reset = |reset_counter | loader_busy;
 
 always @(posedge clk_sys) begin
-    if (status[0] | loader_busy)
+    if (reset_request | loader_busy)
         reset_counter <= 20'd500000;
     else if (reset_counter)
         reset_counter <= reset_counter - 1'd1;
@@ -596,6 +606,12 @@ wire [7:0] joy1x = cont1_joy[7:0];
 wire [7:0] joy1y = cont1_joy[15:8];
 wire [7:0] joy2x = cont2_joy[7:0];
 wire [7:0] joy2y = cont2_joy[15:8];
+wire [20:0] joy_primary = swap_joysticks ? joy_1 : joy_0;
+wire [20:0] joy_secondary = swap_joysticks ? joy_0 : joy_1;
+wire [7:0] joy_primary_x = swap_joysticks ? joy2x : joy1x;
+wire [7:0] joy_primary_y = swap_joysticks ? joy2y : joy1y;
+wire [7:0] joy_secondary_x = swap_joysticks ? joy1x : joy2x;
+wire [7:0] joy_secondary_y = swap_joysticks ? joy1y : joy2y;
 
 // ========================================================================
 //  BIOS ROM (2KB, from 5200.mif at synthesis time)
@@ -669,7 +685,7 @@ end
 endfunction
 
 reg        ioctl_download = 0;
-reg  [7:0] cart_select = 8'd0;
+reg  [7:0] cart_select_auto = 8'd0;
 reg [31:0] cart_expected_size = 0;
 reg        cart_header_done = 0;
 reg        cart_has_header = 0;
@@ -729,7 +745,7 @@ always @(posedge clk_sys) begin
     end
 
     if (game_dl_wr && (game_dl_addr == 24'd0)) begin
-        cart_select <= 8'd0;
+        cart_select_auto <= 8'd0;
         cart_header_done <= 0;
         cart_has_header <= 0;
         cart_flush_pending <= 0;
@@ -753,10 +769,10 @@ always @(posedge clk_sys) begin
                     if (resolved_type == 8'd0 && cart_expected_size >= 32'd16) begin
                         resolved_type = detect_raw_cart_type(cart_expected_size - 32'd16);
                     end
-                    cart_select <= resolved_type;
+                    cart_select_auto <= resolved_type;
                 end else begin
                     cart_has_header <= 0;
-                    cart_select <= detect_raw_cart_type(cart_expected_size);
+                    cart_select_auto <= detect_raw_cart_type(cart_expected_size);
                     cart_flush_pending <= 1;
                     cart_flush_index <= 0;
                 end
@@ -801,6 +817,9 @@ end
 
 wire [15:0] laudio, raudio;
 wire        cpu_halt;
+wire [5:0]  CPU_SPEEDS[8] = '{6'd1, 6'd2, 6'd4, 6'd8, 6'd16, 6'd0, 6'd0, 6'd0};
+wire  [7:0] cart_select = (cart_type_override == 8'd0) ? cart_select_auto : cart_type_override;
+wire  [5:0] cpu_speed = CPU_SPEEDS[cpu_speed_setting];
 
 wire        set_reset = 0;
 wire        set_pause = 0;
@@ -830,7 +849,7 @@ atari5200top atari5200top_inst (
     .SET_PAUSE_IN (set_pause),
     .CART_SELECT_IN(cart_select),
     .HOT_KEYS     (atari_hotkeys),
-    .COLD_RESET_MENU(status[0]),
+    .COLD_RESET_MENU(reset_request),
 
     // DMA for cartridge loading — from FIFO
     .HPS_DMA_ADDR (dma_addr_out),
@@ -847,8 +866,8 @@ atari5200top atari5200top_inst (
     .HBLANK       (HBlank_o),
     .VBLANK       (VBlank_o),
 
-    .CPU_SPEED    (6'd1),   // 1x speed
-    .CLIP_SIDES   (1'b0),
+    .CPU_SPEED    (cpu_speed),
+    .CLIP_SIDES   (clip_sides),
     .AUDIO_L      (laudio),
     .AUDIO_R      (raudio),
     .CPU_HALT     (cpu_halt),
@@ -856,18 +875,18 @@ atari5200top atari5200top_inst (
     .PS2_KEY      (11'd0),  // TODO: dock keyboard
 
     // Analog joysticks
-    .JOY1X        (joy1x),
-    .JOY1Y        (joy1y),
-    .JOY2X        (joy2x),
-    .JOY2Y        (joy2y),
+    .JOY1X        (joy_primary_x),
+    .JOY1Y        (joy_primary_y),
+    .JOY2X        (joy_secondary_x),
+    .JOY2Y        (joy_secondary_y),
     .JOY3X        (8'd0),
     .JOY3Y        (8'd0),
     .JOY4X        (8'd0),
     .JOY4Y        (8'd0),
 
     // Digital joysticks
-    .JOY1         (joy_0),
-    .JOY2         (joy_1),
+    .JOY1         (joy_primary),
+    .JOY2         (joy_secondary),
     .JOY3         (21'd0),
     .JOY4         (21'd0)
 );

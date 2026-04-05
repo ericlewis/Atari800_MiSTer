@@ -12,6 +12,51 @@
           { "value": "0x00", "name": "No" },
           { "value": "0x01", "name": "Yes" }
         ]
+      },
+      {
+        "id": "0x01",
+        "name": "Cart Type",
+        "type": "list",
+        "address": "0x00000004",
+        "defaultval": "0x00",
+        "options": [
+          { "value": "0x00", "name": "Auto" },
+          { "value": "0x10", "name": "16KB 1-chip" },
+          { "value": "0x06", "name": "16KB 2-chip" },
+          { "value": "0x04", "name": "32KB" },
+          { "value": "0x13", "name": "8KB" },
+          { "value": "0x14", "name": "4KB" },
+          { "value": "0x07", "name": "40KB Bounty Bob" },
+          { "value": "0x47", "name": "64KB SuperCart" },
+          { "value": "0x48", "name": "128KB SuperCart" },
+          { "value": "0x49", "name": "256KB SuperCart" },
+          { "value": "0x4A", "name": "512KB SuperCart" }
+        ]
+      },
+      {
+        "id": "0x02",
+        "name": "CPU Speed",
+        "type": "list",
+        "address": "0x00000008",
+        "defaultval": "0x00",
+        "options": [
+          { "value": "0x00", "name": "1x" },
+          { "value": "0x01", "name": "2x" },
+          { "value": "0x02", "name": "4x" },
+          { "value": "0x03", "name": "8x" },
+          { "value": "0x04", "name": "16x" }
+        ]
+      },
+      {
+        "id": "0x03",
+        "name": "Clip Sides",
+        "type": "list",
+        "address": "0x0000000C",
+        "defaultval": "0x00",
+        "options": [
+          { "value": "0x00", "name": "No" },
+          { "value": "0x01", "name": "Yes" }
+        ]
       }
     ]
   }
