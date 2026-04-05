@@ -674,14 +674,31 @@ data_loader #(
     .write_en(cart_dl_wr), .write_addr(cart_dl_addr), .write_data(cart_dl_data)
 );
 
+function automatic [7:0] map_5200_cart_type(input [7:0] cart_type);
+begin
+    case (cart_type)
+        8'd4:  map_5200_cart_type = 8'd4;   // 32KB 5200 cart: keep upstream ID for now
+        8'd6:  map_5200_cart_type = 8'h21;  // two-chip 16KB 5200 -> internal 16KB mode
+        8'd7:  map_5200_cart_type = 8'd7;   // Bounty Bob special-cased in address_decoder
+        8'd16: map_5200_cart_type = 8'h21;  // one-chip 16KB 5200 -> internal 16KB mode
+        8'd19: map_5200_cart_type = 8'h01;  // 8KB 5200 -> internal 8KB mode
+        8'd20: map_5200_cart_type = 8'h17;  // 4KB 5200 -> internal 4KB mode
+        8'd71, 8'd72, 8'd73, 8'd74:
+            map_5200_cart_type = cart_type; // SuperCart modes are special-cased directly
+        default:
+            map_5200_cart_type = cart_type;
+    endcase
+end
+endfunction
+
 function automatic [7:0] detect_raw_cart_type(input [31:0] size_bytes);
 begin
     case (size_bytes)
-        32'd4096:   detect_raw_cart_type = 8'd20; // 4KB
-        32'd8192:   detect_raw_cart_type = 8'd19; // 8KB
-        32'd16384:  detect_raw_cart_type = 8'd16; // default raw 16KB to one-chip 16KB
-        32'd32768:  detect_raw_cart_type = 8'd4;  // 32KB
-        32'd40960:  detect_raw_cart_type = 8'd7;  // Bounty Bob 40KB
+        32'd4096:   detect_raw_cart_type = map_5200_cart_type(8'd20); // 4KB
+        32'd8192:   detect_raw_cart_type = map_5200_cart_type(8'd19); // 8KB
+        32'd16384:  detect_raw_cart_type = map_5200_cart_type(8'd16); // default raw 16KB to one-chip 16KB
+        32'd32768:  detect_raw_cart_type = map_5200_cart_type(8'd4);  // 32KB
+        32'd40960:  detect_raw_cart_type = map_5200_cart_type(8'd7);  // Bounty Bob 40KB
         32'd65536:  detect_raw_cart_type = 8'd71; // Super Cart 64KB
         32'd131072: detect_raw_cart_type = 8'd72; // Super Cart 128KB
         32'd262144: detect_raw_cart_type = 8'd73; // Super Cart 256KB
@@ -696,7 +713,7 @@ begin
     case (cart_type)
         32'd4, 32'd6, 32'd7, 32'd16, 32'd19, 32'd20,
         32'd71, 32'd72, 32'd73, 32'd74:
-            sanitize_cart_type = cart_type[7:0];
+            sanitize_cart_type = map_5200_cart_type(cart_type[7:0]);
         default:
             sanitize_cart_type = 8'd0;
     endcase
