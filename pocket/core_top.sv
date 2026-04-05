@@ -201,7 +201,7 @@ wire        sdram_ready;
 synch_3 s01 (pll_core_locked, pll_core_locked_s, clk_74a);
 
 wire        status_boot_done  = pll_core_locked_s;
-wire        status_setup_done = sdram_ready;
+wire        status_setup_done = pll_core_locked_s;
 wire        status_running    = reset_n;
 
 wire        dataslot_requestread;
