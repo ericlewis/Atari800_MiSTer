@@ -9,7 +9,8 @@
         "parameters": "0x1",
         "extensions": ["rom", "bin"],
         "filename": "5200.rom",
-        "address": "0x20000000"
+        "address": "0x20000000",
+        "size_maximum": "0x00000800"
       },
       {
         "id": 1,
@@ -17,7 +18,8 @@
         "required": true,
         "parameters": "0x201",
         "extensions": ["car", "a52", "bin", "rom"],
-        "address": "0x20000000"
+        "address": "0x21000000",
+        "size_maximum": "0x00080010"
       }
     ]
   }

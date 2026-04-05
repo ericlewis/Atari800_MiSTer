@@ -602,29 +602,34 @@ wire [7:0] joy2y = cont2_joy[15:8];
 
 wire  [7:0] rom_data;
 wire [10:0] rom_addr;
+wire        cart_dl_wr;
+wire [27:0] cart_dl_addr;
+wire  [7:0] cart_dl_data;
+wire        bios_dl_wr  = cart_dl_wr && (cart_dl_addr[27:24] == 4'h0);
+wire [10:0] bios_dl_addr = cart_dl_addr[10:0];
+wire  [7:0] bios_dl_data = cart_dl_data;
+wire        game_dl_wr  = cart_dl_wr && (cart_dl_addr[27:24] == 4'h1);
+wire [23:0] game_dl_addr = cart_dl_addr[23:0];
 
 dpram #(11, 8, "rtl/rom/5200.mif") bios_5200 (
     .clock     (clk_sys),
-    .address_a (ioctl_addr[10:0]),
-    .data_a    (ioctl_dout),
-    .wren_a    (ioctl_wr && (ioctl_index == 0)),
+    .address_a (bios_dl_addr),
+    .data_a    (bios_dl_data),
+    .wren_a    (bios_dl_wr),
     .address_b (rom_addr),
     .q_b       (rom_data)
 );
 
 // ========================================================================
-//  Cartridge loading via data_loader (agg23 utility)
-//  Slot 1 (cart) at 0x1xxxxxxx → DMA to SDRAM
+//  Cartridge loading via data_loader
+//  BIOS uses 0x20000000 and writes straight into BRAM.
+//  Game ROMs use 0x21000000 and stream into SDRAM via DMA.
 // ========================================================================
 
 always @(posedge clk_74a) begin
     target_dataslot_read <= 0; target_dataslot_write <= 0;
     target_dataslot_getfile <= 0; target_dataslot_openfile <= 0;
 end
-
-wire        cart_dl_wr;
-wire [27:0] cart_dl_addr;
-wire  [7:0] cart_dl_data;
 
 data_loader #(.ADDRESS_MASK_UPPER_4(4'h2), .ADDRESS_SIZE(28)) cart_dl (
     .clk_74a(clk_74a), .clk_memory(clk_sys),
@@ -633,21 +638,60 @@ data_loader #(.ADDRESS_MASK_UPPER_4(4'h2), .ADDRESS_SIZE(28)) cart_dl (
     .write_en(cart_dl_wr), .write_addr(cart_dl_addr), .write_data(cart_dl_data)
 );
 
-// Map to ioctl signals for the DMA state machine
+function automatic [7:0] detect_raw_cart_type(input [31:0] size_bytes);
+begin
+    case (size_bytes)
+        32'd4096:   detect_raw_cart_type = 8'd20; // 4KB
+        32'd8192:   detect_raw_cart_type = 8'd19; // 8KB
+        32'd16384:  detect_raw_cart_type = 8'd16; // default raw 16KB to one-chip 16KB
+        32'd32768:  detect_raw_cart_type = 8'd4;  // 32KB
+        32'd40960:  detect_raw_cart_type = 8'd7;  // Bounty Bob 40KB
+        32'd65536:  detect_raw_cart_type = 8'd71; // Super Cart 64KB
+        32'd131072: detect_raw_cart_type = 8'd72; // Super Cart 128KB
+        32'd262144: detect_raw_cart_type = 8'd73; // Super Cart 256KB
+        32'd524288: detect_raw_cart_type = 8'd74; // Super Cart 512KB
+        default:    detect_raw_cart_type = 8'd0;
+    endcase
+end
+endfunction
+
+function automatic [7:0] sanitize_cart_type(input [31:0] cart_type);
+begin
+    case (cart_type)
+        32'd4, 32'd6, 32'd7, 32'd16, 32'd19, 32'd20,
+        32'd71, 32'd72, 32'd73, 32'd74:
+            sanitize_cart_type = cart_type[7:0];
+        default:
+            sanitize_cart_type = 8'd0;
+    endcase
+end
+endfunction
+
 reg        ioctl_download = 0;
-reg        ioctl_wr;
-reg [26:0] ioctl_addr;
-reg  [7:0] ioctl_dout;
-reg  [7:0] ioctl_index;
+reg  [7:0] cart_select = 8'd0;
+reg [31:0] cart_expected_size = 0;
+reg        cart_header_done = 0;
+reg        cart_has_header = 0;
+reg        cart_flush_pending = 0;
+reg  [4:0] cart_flush_index = 0;
+reg  [7:0] cart_header [0:15];
 
 reg dl_downloading = 0;
 reg dl_s0, dl_s1;
-reg [7:0] dl_slot_id = 0;
+reg [31:0] cart_request_size_74 = 0;
+reg        cart_request_toggle_74 = 0;
+reg [31:0] cart_request_size_meta = 0;
+reg [31:0] cart_request_size_sync = 0;
+reg  [1:0] cart_request_toggle_sync = 0;
+wire       cart_request_pulse = cart_request_toggle_sync[1] ^ cart_request_toggle_sync[0];
 
 always @(posedge clk_74a) begin
     if (dataslot_requestwrite) begin
         dl_downloading <= 1;
-        dl_slot_id <= dataslot_requestwrite_id[7:0];
+        if (dataslot_requestwrite_id == 16'd1) begin
+            cart_request_size_74 <= dataslot_requestwrite_size;
+            cart_request_toggle_74 <= ~cart_request_toggle_74;
+        end
     end
     if (dataslot_allcomplete) dl_downloading <= 0;
 end
@@ -656,10 +700,9 @@ always @(posedge clk_sys) begin
     dl_s0 <= dl_downloading;
     dl_s1 <= dl_s0;
     ioctl_download <= dl_s1;
-    ioctl_wr   <= cart_dl_wr;
-    ioctl_addr <= cart_dl_addr[26:0];
-    ioctl_dout <= cart_dl_data;
-    ioctl_index <= dl_slot_id; // 0=BIOS, 1=cartridge
+    cart_request_size_meta <= cart_request_size_74;
+    cart_request_size_sync <= cart_request_size_meta;
+    cart_request_toggle_sync <= {cart_request_toggle_sync[0], cart_request_toggle_74};
 end
 
 // DMA to SDRAM for cartridge loading
@@ -677,12 +720,64 @@ reg         dma_req = 0;
 reg  [7:0]  dma_data_out;
 reg [25:0]  dma_addr_out;
 
-// Fill FIFO from data_loader (only for cart, index==1)
+// Fill FIFO from the game slot. Hold back the first 16 bytes so .car images can
+// strip their header and raw images can be auto-typed from the true ROM size.
 always @(posedge clk_sys) begin
-    if (ioctl_wr && ioctl_index == 8'd1) begin
-        dma_fifo_data[dma_fifo_wr_ptr] <= ioctl_dout;
-        dma_fifo_addr[dma_fifo_wr_ptr] <= ioctl_addr;
+    if (cart_request_pulse) begin
+        cart_expected_size <= cart_request_size_sync;
+    end
+
+    if (game_dl_wr && (game_dl_addr == 24'd0)) begin
+        cart_select <= 8'd0;
+        cart_header_done <= 0;
+        cart_has_header <= 0;
+        cart_flush_pending <= 0;
+        cart_flush_index <= 0;
+        cart_header[0] <= cart_dl_data;
+    end else if (game_dl_wr) begin
+        if (!cart_header_done && (game_dl_addr < 24'd16)) begin
+            cart_header[game_dl_addr[3:0]] <= cart_dl_data;
+            if (game_dl_addr == 24'd15) begin
+                reg [31:0] header_type;
+                reg [7:0] resolved_type;
+
+                header_type = {cart_header[4], cart_header[5], cart_header[6], cart_header[7]};
+                resolved_type = 8'd0;
+
+                cart_header_done <= 1;
+                if ((cart_header[0] == 8'h43) && (cart_header[1] == 8'h41) &&
+                    (cart_header[2] == 8'h52) && (cart_header[3] == 8'h54)) begin
+                    cart_has_header <= 1;
+                    resolved_type = sanitize_cart_type(header_type);
+                    if (resolved_type == 8'd0 && cart_expected_size >= 32'd16) begin
+                        resolved_type = detect_raw_cart_type(cart_expected_size - 32'd16);
+                    end
+                    cart_select <= resolved_type;
+                end else begin
+                    cart_has_header <= 0;
+                    cart_select <= detect_raw_cart_type(cart_expected_size);
+                    cart_flush_pending <= 1;
+                    cart_flush_index <= 0;
+                end
+            end
+        end else if (cart_has_header) begin
+            dma_fifo_data[dma_fifo_wr_ptr] <= cart_dl_data;
+            dma_fifo_addr[dma_fifo_wr_ptr] <= {3'd0, game_dl_addr} - 27'd16;
+            dma_fifo_wr_ptr <= dma_fifo_wr_ptr + 1'd1;
+        end else begin
+            dma_fifo_data[dma_fifo_wr_ptr] <= cart_dl_data;
+            dma_fifo_addr[dma_fifo_wr_ptr] <= {3'd0, game_dl_addr};
+            dma_fifo_wr_ptr <= dma_fifo_wr_ptr + 1'd1;
+        end
+    end else if (cart_flush_pending) begin
+        dma_fifo_data[dma_fifo_wr_ptr] <= cart_header[cart_flush_index[3:0]];
+        dma_fifo_addr[dma_fifo_wr_ptr] <= {22'd0, cart_flush_index};
         dma_fifo_wr_ptr <= dma_fifo_wr_ptr + 1'd1;
+        if (cart_flush_index == 5'd15) begin
+            cart_flush_pending <= 0;
+        end else begin
+            cart_flush_index <= cart_flush_index + 1'd1;
+        end
     end
 end
 
@@ -706,7 +801,6 @@ end
 wire [15:0] laudio, raudio;
 wire        cpu_halt;
 
-wire  [7:0] cart_select = ioctl_download ? 8'd1 : 8'd1; // Standard 32KB cartridge
 wire        set_reset = 0;
 wire        set_pause = 0;
 wire  [2:0] atari_hotkeys;
