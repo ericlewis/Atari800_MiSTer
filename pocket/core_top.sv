@@ -196,14 +196,13 @@ end
 wire        reset_n;
 wire        pll_core_locked;
 wire        pll_core_locked_s;
-wire        core_setup_done;
-wire        core_running;
+wire        sdram_ready;
 
 synch_3 s01 (pll_core_locked, pll_core_locked_s, clk_74a);
 
 wire        status_boot_done  = pll_core_locked_s;
-wire        status_setup_done = core_setup_done;
-wire        status_running    = core_running;
+wire        status_setup_done = sdram_ready;
+wire        status_running    = reset_n;
 
 wire        dataslot_requestread;
 wire [15:0] dataslot_requestread_id;
@@ -562,8 +561,6 @@ wire       loader_busy = ioctl_download | dma_req | (dma_fifo_rd_ptr != dma_fifo
 wire       atari_reset = |reset_counter;
 reg        loader_busy_d = 0;
 reg        fb_activity = 0;
-assign core_running = sdram_ready && !atari_reset;
-assign core_setup_done = sdram_ready && !loader_busy && !atari_reset;
 assign debug_video_active = !sdram_ready | loader_busy | atari_reset | !fb_activity;
 assign debug_video_rgb =
     !sdram_ready ? 24'hFF0000 :
@@ -772,7 +769,6 @@ always @(posedge clk_sys) begin
 end
 
 // DMA to SDRAM for cartridge loading
-wire       sdram_ready;
 wire       dma_ready;
 wire       file_download = loader_busy;
 
