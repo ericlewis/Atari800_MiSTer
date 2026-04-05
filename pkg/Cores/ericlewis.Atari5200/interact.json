@@ -8,6 +8,8 @@
         "type": "list",
         "address": "0x00000000",
         "defaultval": "0x00",
+        "enabled": true,
+        "persist": true,
         "options": [
           { "value": "0x00", "name": "No" },
           { "value": "0x01", "name": "Yes" }
@@ -19,6 +21,8 @@
         "type": "list",
         "address": "0x00000004",
         "defaultval": "0x00",
+        "enabled": true,
+        "persist": true,
         "options": [
           { "value": "0x00", "name": "Auto" },
           { "value": "0x10", "name": "16KB 1-chip" },
@@ -39,6 +43,8 @@
         "type": "list",
         "address": "0x00000008",
         "defaultval": "0x00",
+        "enabled": true,
+        "persist": true,
         "options": [
           { "value": "0x00", "name": "1x" },
           { "value": "0x01", "name": "2x" },
@@ -53,6 +59,8 @@
         "type": "list",
         "address": "0x0000000C",
         "defaultval": "0x00",
+        "enabled": true,
+        "persist": true,
         "options": [
           { "value": "0x00", "name": "No" },
           { "value": "0x01", "name": "Yes" }

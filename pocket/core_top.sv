@@ -648,7 +648,14 @@ always @(posedge clk_74a) begin
     target_dataslot_getfile <= 0; target_dataslot_openfile <= 0;
 end
 
-data_loader #(.ADDRESS_MASK_UPPER_4(4'h2), .ADDRESS_SIZE(28)) cart_dl (
+data_loader #(
+    .ADDRESS_MASK_UPPER_4(4'h2),
+    .ADDRESS_SIZE(28),
+    // Slow the APF->clk_sys byte cadence to better match the downstream
+    // SDRAM DMA consumer, as done by other Pocket SDRAM-backed cores.
+    .WRITE_MEM_CLOCK_DELAY(7),
+    .OUTPUT_WORD_SIZE(1)
+) cart_dl (
     .clk_74a(clk_74a), .clk_memory(clk_sys),
     .bridge_wr(bridge_wr), .bridge_endian_little(bridge_endian_little),
     .bridge_addr(bridge_addr), .bridge_wr_data(bridge_wr_data),
@@ -727,12 +734,13 @@ wire       sdram_ready;
 wire       dma_ready;
 wire       file_download = loader_busy;
 
-// DMA handshake: hold dma_req HIGH until dma_ready acknowledges
-// Buffer incoming bytes in a FIFO since data_loader fires faster than DMA can consume
-reg  [7:0]  dma_fifo_data [0:255];
-reg [26:0]  dma_fifo_addr [0:255];
-reg  [7:0]  dma_fifo_wr_ptr = 0;
-reg  [7:0]  dma_fifo_rd_ptr = 0;
+// DMA handshake: hold dma_req HIGH until dma_ready acknowledges.
+// Buffer incoming bytes in BRAM because the APF bridge can still outrun
+// the SDRAM DMA path for small carts if we stage too little.
+(* ramstyle = "M10K, no_rw_check" *) reg  [7:0] dma_fifo_data [0:4095];
+(* ramstyle = "M10K, no_rw_check" *) reg [26:0] dma_fifo_addr [0:4095];
+reg [11:0]  dma_fifo_wr_ptr = 0;
+reg [11:0]  dma_fifo_rd_ptr = 0;
 reg         dma_req = 0;
 reg  [7:0]  dma_data_out;
 reg [25:0]  dma_addr_out;
