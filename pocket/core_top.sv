@@ -544,10 +544,11 @@ altddio_out #(
 // ========================================================================
 
 reg [19:0] reset_counter = 20'd500000;
-wire       atari_reset = |reset_counter | ioctl_download;
+wire       loader_busy = ioctl_download | dma_req | (dma_fifo_rd_ptr != dma_fifo_wr_ptr) | cart_flush_pending;
+wire       atari_reset = |reset_counter | loader_busy;
 
 always @(posedge clk_sys) begin
-    if (status[0] | ioctl_download)
+    if (status[0] | loader_busy)
         reset_counter <= 20'd500000;
     else if (reset_counter)
         reset_counter <= reset_counter - 1'd1;
@@ -708,7 +709,7 @@ end
 // DMA to SDRAM for cartridge loading
 wire       sdram_ready;
 wire       dma_ready;
-wire       file_download = ioctl_download;
+wire       file_download = loader_busy;
 
 // DMA handshake: hold dma_req HIGH until dma_ready acknowledges
 // Buffer incoming bytes in a FIFO since data_loader fires faster than DMA can consume
