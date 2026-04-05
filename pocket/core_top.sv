@@ -196,12 +196,14 @@ end
 wire        reset_n;
 wire        pll_core_locked;
 wire        pll_core_locked_s;
+wire        core_setup_done;
+wire        core_running;
 
 synch_3 s01 (pll_core_locked, pll_core_locked_s, clk_74a);
 
 wire        status_boot_done  = pll_core_locked_s;
-wire        status_setup_done = pll_core_locked_s;
-wire        status_running    = reset_n;
+wire        status_setup_done = core_setup_done;
+wire        status_running    = core_running;
 
 wire        dataslot_requestread;
 wire [15:0] dataslot_requestread_id;
@@ -557,6 +559,8 @@ reg [19:0] reset_counter = 20'd500000;
 wire       loader_busy = ioctl_download | dma_req | (dma_fifo_rd_ptr != dma_fifo_wr_ptr) | cart_flush_pending;
 wire       atari_reset = |reset_counter;
 reg        loader_busy_d = 0;
+assign core_running = sdram_ready && !atari_reset;
+assign core_setup_done = sdram_ready && !loader_busy && !atari_reset;
 
 always @(posedge clk_sys) begin
     loader_busy_d <= loader_busy;
