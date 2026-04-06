@@ -7,7 +7,7 @@
         "name": "5200 BIOS",
         "required": true,
         "parameters": "0x2",
-        "extensions": ["rom", "bin"],
+        "extensions": ["rom"],
         "filename": "5200.rom",
         "address": "0x20000000",
         "size_maximum": "0x00000800"
@@ -17,7 +17,7 @@
         "name": "Cartridge",
         "required": true,
         "parameters": "0x1",
-        "extensions": ["car", "a52", "bin", "rom"],
+        "extensions": ["car", "a52", "bin"],
         "address": "0x21000000",
         "size_maximum": "0x00080010"
       }
