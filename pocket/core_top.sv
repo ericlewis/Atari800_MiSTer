@@ -558,19 +558,19 @@ altddio_out #(
 
 reg [19:0] reset_counter = 20'd500000;
 wire       loader_busy = ioctl_download | dma_req | (dma_fifo_rd_ptr != dma_fifo_wr_ptr) | cart_flush_pending;
-wire       atari_reset = |reset_counter;
+wire       cold_reset_menu = |reset_counter;
 reg        loader_busy_d = 0;
 reg        fb_activity = 0;
-assign debug_video_active = !sdram_ready | loader_busy | atari_reset | !fb_activity;
+assign debug_video_active = !sdram_ready | loader_busy | cold_reset_menu | !fb_activity;
 assign debug_video_rgb =
     !sdram_ready ? 24'hFF0000 :
     loader_busy  ? 24'hFFFF00 :
-    atari_reset  ? 24'h0000FF :
+    cold_reset_menu ? 24'h0000FF :
                    24'h00FF00;
 
 always @(posedge clk_sys) begin
     loader_busy_d <= loader_busy;
-    if (atari_reset || loader_busy)
+    if (cold_reset_menu || loader_busy)
         fb_activity <= 0;
     else if (ce_pix & ~HBlank_o & ~VBlank_o)
         fb_activity <= 1;
@@ -874,7 +874,7 @@ wire  [2:0] atari_hotkeys;
 atari5200top atari5200top_inst (
     .CLK          (clk_sys),
     .CLK_SDRAM    (clk_mem),
-    .RESET_N      (~atari_reset),
+    .RESET_N      (reset_n),
 
     .SDRAM_BA     (dram_ba),
     .SDRAM_nRAS   (dram_ras_n),
@@ -895,7 +895,7 @@ atari5200top atari5200top_inst (
     .SET_PAUSE_IN (set_pause),
     .CART_SELECT_IN(cart_select),
     .HOT_KEYS     (atari_hotkeys),
-    .COLD_RESET_MENU(reset_request),
+    .COLD_RESET_MENU(reset_request | cold_reset_menu),
 
     // DMA for cartridge loading — from FIFO
     .HPS_DMA_ADDR (dma_addr_out),
