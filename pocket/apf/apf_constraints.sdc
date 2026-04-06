@@ -16,5 +16,5 @@ derive_pll_clocks
 # 
 
 
-# load in user constraints 
-read_sdc "core/core_constraints.sdc"
+# load in user constraints
+read_sdc "../core_constraints.sdc"
