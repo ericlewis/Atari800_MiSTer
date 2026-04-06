@@ -402,8 +402,11 @@ reg ce_pix_raw_old = 0;
 wire ce_pix = ce_pix_raw & ~ce_pix_raw_old;
 always @(posedge clk_sys) ce_pix_raw_old <= ce_pix_raw;
 
-// FB BRAM: 256 lines x 512 pixels x 8 bits = 128K entries
-reg  [7:0] fb [0:131071]; // 2^17
+// Double-buffered FB BRAM: 2 x (256 lines x 512 pixels x 8 bits).
+// Reading from the previous completed frame avoids undefined dual-clock
+// read-during-write behavior and removes tearing/corruption from the
+// single-buffer implementation.
+(* ramstyle = "M10K, no_rw_check" *) reg [7:0] fb [0:262143]; // 2^18
 reg  [7:0] fb_rddata;
 
 // Write side (clk_sys)
@@ -411,13 +414,16 @@ reg  [8:0] fb_x = 0;  // 0-319
 reg  [7:0] fb_y = 0;  // 0-255
 reg        fb_hs_prev = 0;
 reg        fb_vs_prev = 0;
+reg        fb_write_buf_sel = 0;
+reg        fb_ready_buf_sel_sys = 0;
+reg        fb_ready_toggle_sys = 0;
 
 always @(posedge clk_sys) begin
     fb_hs_prev <= HSync_o;
     fb_vs_prev <= VSync_o;
 
     if (ce_pix & ~HBlank_o & ~VBlank_o & fb_x < 320) begin
-        fb[{fb_y, fb_x}] <= {Ro[7:5], Go[7:5], Bo[7:6]};
+        fb[{fb_write_buf_sel, fb_y, fb_x}] <= {Ro[7:5], Go[7:5], Bo[7:6]};
         fb_x <= fb_x + 1'd1;
     end
 
@@ -428,12 +434,23 @@ always @(posedge clk_sys) begin
     end
 
     // New frame
-    if (VSync_o & ~fb_vs_prev)
+    if (VSync_o & ~fb_vs_prev) begin
+        fb_ready_buf_sel_sys <= fb_write_buf_sel;
+        fb_ready_toggle_sys <= ~fb_ready_toggle_sys;
+        fb_write_buf_sel <= ~fb_write_buf_sel;
+        fb_x <= 0;
         fb_y <= 0;
+    end
 end
 
 // Read side (clk_vid)
-reg [16:0] fb_rdaddr;
+reg [17:0] fb_rdaddr;
+reg        fb_read_buf_sel = 0;
+reg        fb_ready_buf_sel_meta = 0;
+reg        fb_ready_buf_sel_vid = 0;
+reg        fb_ready_toggle_meta = 0;
+reg        fb_ready_toggle_vid = 0;
+reg        fb_ready_toggle_prev = 0;
 always @(posedge clk_vid)
     fb_rddata <= fb[fb_rdaddr];
 
@@ -450,6 +467,11 @@ reg [9:0] v_cnt = 0;
 reg       vid_vs = 0, vid_hs = 0, vid_de = 0;
 
 always @(posedge clk_vid) begin
+    fb_ready_buf_sel_meta <= fb_ready_buf_sel_sys;
+    fb_ready_buf_sel_vid <= fb_ready_buf_sel_meta;
+    fb_ready_toggle_meta <= fb_ready_toggle_sys;
+    fb_ready_toggle_vid <= fb_ready_toggle_meta;
+
     vid_de <= 0; vid_vs <= 0; vid_hs <= 0;
 
     h_cnt <= h_cnt + 1'd1;
@@ -459,15 +481,21 @@ always @(posedge clk_vid) begin
         if (v_cnt == V_TOTAL - 1) v_cnt <= 0;
     end
 
-    if (h_cnt == 0 && v_cnt == 0) vid_vs <= 1;
+    if (h_cnt == 0 && v_cnt == 0) begin
+        vid_vs <= 1;
+        if (fb_ready_toggle_vid != fb_ready_toggle_prev) begin
+            fb_read_buf_sel <= fb_ready_buf_sel_vid;
+            fb_ready_toggle_prev <= fb_ready_toggle_vid;
+        end
+    end
     if (h_cnt == 3) vid_hs <= 1;
 
     if (h_cnt >= H_BPORCH && h_cnt < H_ACTIVE + H_BPORCH &&
         v_cnt >= V_BPORCH && v_cnt < V_ACTIVE + V_BPORCH)
         vid_de <= 1;
 
-    // Read address: {line[7:0], pixel[8:0]}
-    fb_rdaddr <= {v_cnt[7:0] - V_BPORCH[7:0], h_cnt[8:0] - H_BPORCH[8:0] + 9'd16};
+    // Read address: {buffer, line[7:0], pixel[8:0]}
+    fb_rdaddr <= {fb_read_buf_sel, v_cnt[7:0] - V_BPORCH[7:0], h_cnt[8:0] - H_BPORCH[8:0] + 9'd16};
 end
 
 // Expand RGB332 → RGB888
