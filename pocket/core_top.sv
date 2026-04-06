@@ -797,6 +797,7 @@ reg [11:0]  dma_fifo_rd_ptr = 0;
 reg         dma_req = 0;
 reg  [7:0]  dma_data_out;
 reg [25:0]  dma_addr_out;
+localparam [25:0] CART_DMA_BASE = {1'b1, 3'b010, 22'd0};
 
 // Fill FIFO from the game slot. Hold back the first 16 bytes so .car images can
 // strip their header and raw images can be auto-typed from the true ROM size.
@@ -866,7 +867,7 @@ always @(posedge clk_sys) begin
     end
     else if (!dma_req && dma_fifo_rd_ptr != dma_fifo_wr_ptr) begin
         dma_data_out <= dma_fifo_data[dma_fifo_rd_ptr];
-        dma_addr_out <= dma_fifo_addr[dma_fifo_rd_ptr][25:0];
+        dma_addr_out <= CART_DMA_BASE | {4'd0, dma_fifo_addr[dma_fifo_rd_ptr][21:0]};
         dma_fifo_rd_ptr <= dma_fifo_rd_ptr + 1'd1;
         dma_req <= 1;
     end
