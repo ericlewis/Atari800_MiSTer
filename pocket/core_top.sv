@@ -584,10 +584,8 @@ altddio_out #(
 //  Reset
 // ========================================================================
 
-reg [19:0] reset_counter = 20'd500000;
 wire       loader_busy = ioctl_download | dma_req | (dma_fifo_rd_ptr != dma_fifo_wr_ptr) | cart_flush_pending;
-wire       cold_reset_menu = |reset_counter;
-reg        loader_busy_d = 0;
+wire       cold_reset_menu = reset_request;
 reg        fb_activity = 0;
 assign debug_video_active = !sdram_ready | loader_busy | cold_reset_menu | !fb_activity;
 assign debug_video_rgb =
@@ -597,21 +595,10 @@ assign debug_video_rgb =
                    24'h00FF00;
 
 always @(posedge clk_sys) begin
-    loader_busy_d <= loader_busy;
     if (cold_reset_menu || loader_busy)
         fb_activity <= 0;
     else if (ce_pix & ~HBlank_o & ~VBlank_o)
         fb_activity <= 1;
-
-    // Do not hold the whole core in reset during APF loading, because that also
-    // keeps the SDRAM path from becoming ready. Instead, issue a reset pulse
-    // after the loader finishes draining.
-    if (reset_request)
-        reset_counter <= 20'd500000;
-    else if (loader_busy_d && !loader_busy)
-        reset_counter <= 20'd500000;
-    else if (reset_counter)
-        reset_counter <= reset_counter - 1'd1;
 end
 
 // ========================================================================
