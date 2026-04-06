@@ -350,7 +350,6 @@ bridge_interact #(.NUM_REGS(16)) interact_bridge (
 
 wire clk_sys;     // 57.27 MHz
 wire clk_mem;     // 114.55 MHz (SDRAM)
-wire clk_sys_90;  // 57.27 MHz 90° for Pocket video DDR
 wire clk_vid;     // 12.288 MHz (video pixel clock — from template PLL)
 wire clk_vid_90;  // 12.288 MHz 90°
 
@@ -363,7 +362,6 @@ pll pll_core (
     .rst      (1'b0),
     .outclk_0 (clk_sys),
     .outclk_1 (clk_mem),
-    .outclk_2 (clk_sys_90),
     .locked   (pll_core_locked_a)
 );
 
@@ -383,29 +381,14 @@ mf_pllbase pll_vid (
 wire [7:0] Ro, Go, Bo;
 wire       HBlank_o, VBlank_o, HSync_o, VSync_o;
 wire       ce_pix_raw;
-reg  [7:0] core_vid_r = 0, core_vid_g = 0, core_vid_b = 0;
-reg        core_vid_hs = 0, core_vid_vs = 0, core_vid_de = 0;
-reg        core_hsync_prev = 0;
 wire       debug_video_active;
 wire [23:0] debug_video_rgb;
 
-// Drive Pocket from the core's native pixel stream on a matched clk_sys pair.
-assign video_rgb_clock    = clk_sys;
-assign video_rgb_clock_90 = clk_sys_90;
-assign video_skip         = ~ce_pix;
-
-always @(posedge clk_sys) begin
-    if (ce_pix) begin
-        core_vid_r  <= debug_video_active ? debug_video_rgb[23:16] : Ro;
-        core_vid_g  <= debug_video_active ? debug_video_rgb[15:8]  : Go;
-        core_vid_b  <= debug_video_active ? debug_video_rgb[7:0]   : Bo;
-        core_vid_de <= debug_video_active ? 1'b1 : (~HBlank_o & ~VBlank_o);
-        core_vid_hs <= HSync_o;
-        core_hsync_prev <= HSync_o;
-        if (~core_hsync_prev & HSync_o)
-            core_vid_vs <= VSync_o;
-    end
-end
+// Use the framebuffer clock pair for Pocket output so pixel clock and its
+// 90-degree companion always stay phase-aligned.
+assign video_rgb_clock    = clk_vid;
+assign video_rgb_clock_90 = clk_vid_90;
+assign video_skip         = 1'b0;
 
 // Line buffer approach: capture ANTIC scanlines into dual-port BRAM,
 // read them out at 12.288 MHz with our proven generated timing.
@@ -520,10 +503,10 @@ wire [7:0] exp_r = {fb_rddata[7:5], fb_rddata[7:5], fb_rddata[7:6]};
 wire [7:0] exp_g = {fb_rddata[4:2], fb_rddata[4:2], fb_rddata[4:3]};
 wire [7:0] exp_b = {fb_rddata[1:0], fb_rddata[1:0], fb_rddata[1:0], fb_rddata[1:0]};
 
-assign video_rgb = core_vid_de ? {core_vid_r, core_vid_g, core_vid_b} : 24'd0;
-assign video_de  = core_vid_de;
-assign video_vs  = core_vid_vs;
-assign video_hs  = core_vid_hs;
+assign video_rgb = vid_de ? (debug_video_active ? debug_video_rgb : {exp_r, exp_g, exp_b}) : 24'd0;
+assign video_de  = vid_de;
+assign video_vs  = vid_vs;
+assign video_hs  = vid_hs;
 
 // ========================================================================
 //  Audio Output (I2S)
