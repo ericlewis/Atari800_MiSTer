@@ -69,7 +69,9 @@ ARCHITECTURE vhdl OF sdram_statemachine IS
 	end;
 
 	-- bits are: CS_n, RAS_n, CAS_n,WE_n
-	constant sdram_command_inhibit                  : std_logic_vector(3 downto 0) := "1000";
+	-- Pocket's SDRAM interface does not expose a separate chip-select line, so
+	-- command inhibit is not a safe encoding here. Use NOP semantics instead.
+	constant sdram_command_inhibit                  : std_logic_vector(3 downto 0) := "0111";
 	constant sdram_command_no_operation             : std_logic_vector(3 downto 0) := "0111";
 	constant sdram_command_device_burst_stop        : std_logic_vector(3 downto 0) := "0110";
 	constant sdram_command_read                     : std_logic_vector(3 downto 0) := "0101";
@@ -211,9 +213,9 @@ BEGIN
 			dq_output_reg <= '0';
 			ba_reg <= (others=>'0');
 			cs_n_reg <= '0';
-			ras_n_reg <= '0';
-			cas_n_reg <= '0';
-			we_n_reg <= '0';
+			ras_n_reg <= '1';
+			cas_n_reg <= '1';
+			we_n_reg <= '1';
 			ldqm_reg <= '0';
 			udqm_reg <= '0';
 			cke_reg <= '0';
