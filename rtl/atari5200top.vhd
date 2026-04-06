@@ -106,6 +106,7 @@ signal SDRAM_WIDTH_32bit_ACCESS : std_logic;
 
 signal SDRAM_REFRESH : std_logic;
 signal SDRAM_RESET_N : std_logic;
+signal SDRAM_INIT_RESET_N : std_logic := '0';
 
 signal areset_n : std_logic;
 signal cold_reset_request : std_logic;
@@ -117,6 +118,15 @@ signal RAM_DATA : std_logic_vector(31 downto 0);
 BEGIN
 
 JOY <= JOY1 or JOY2 or JOY3 or JOY4;
+
+process(CLK)
+begin
+	if rising_edge(CLK) then
+		if RESET_N = '1' then
+			SDRAM_INIT_RESET_N <= '1';
+		end if;
+	end if;
+end process;
 
 -- PS2 to pokey
 keyboard_map1 : entity work.ps2_to_atari5200
@@ -231,7 +241,7 @@ PORT MAP
 (
 	CLK_SYSTEM => CLK,
 	CLK_SDRAM => CLK_SDRAM,
-	RESET_N =>  '1',
+	RESET_N =>  SDRAM_INIT_RESET_N,
 	READ_EN => SDRAM_READ_ENABLE,
 	WRITE_EN => SDRAM_WRITE_ENABLE,
 	REQUEST => SDRAM_REQUEST,
