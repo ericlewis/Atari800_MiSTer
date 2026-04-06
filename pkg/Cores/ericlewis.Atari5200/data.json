@@ -5,7 +5,7 @@
       {
         "id": 0,
         "name": "5200 BIOS",
-        "required": true,
+        "required": false,
         "parameters": "0x2",
         "extensions": ["rom"],
         "filename": "5200.rom",
